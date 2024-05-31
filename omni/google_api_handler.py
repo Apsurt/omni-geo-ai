@@ -7,9 +7,8 @@ import io
 import cProfile
 from typing import List, NamedTuple, Dict
 import json
-import numpy as np
+import re
 import requests
-import PIL
 from PIL import Image
 from dotenv import load_dotenv
 load_dotenv()
@@ -22,6 +21,14 @@ class Handle:
     def __init__(self) -> None:
         self.__session_id = os.getenv("GOOGLE_SESSION")
         self.__key = os.getenv("GOOGLE_KEY")
+    
+    def analyze_response(self, response) -> None:
+        code = int(re.findall(r"\d+", str(response))[0])
+        match code:
+            case 200:
+                pass
+            case 400:
+                raise RuntimeError(f"Bad request\n{response.text}")
 
     def get_session_id(self) -> str:
         headers = {"Content-Type": "application/json"}
@@ -30,8 +37,9 @@ class Handle:
                   "region":   "US"}
         url = f'https://tile.googleapis.com/v1/createSession?key={self.__key}'
         response = requests.post(url, headers=headers, params=params, timeout=10)
+        self.analyze_response(response)
         return json.loads(response.text)["session"]
-    
+
     def update_session_id(self) -> None:
         new_session_id = self.get_session_id()
         self.__session_id = new_session_id
@@ -49,8 +57,9 @@ class Handle:
             loc = {"lat": coord.lat, "lng": coord.lng}
             payload["locations"].append(loc)
         response = requests.post(url, headers=headers, json=payload, timeout=10)
+        self.analyze_response(response)
         return json.loads(response.text)["panoIds"]
-    
+
     def get_metadata(self, pano_id) -> Dict:
         headers = {"Content-Type": "application/json"}
         params = {"mapType":  "streetview",
@@ -58,24 +67,22 @@ class Handle:
                   "region":   "US"}
         url = f"https://tile.googleapis.com/v1/streetview/metadata?session={self.__session_id}&key={self.__key}&panoId={pano_id}"
         response = requests.get(url, headers=headers, params=params, timeout=10)
+        self.analyze_response(response)
         return json.loads(response.text)
 
     def get_tile(self, pano_id: str, z: int, x: int, y: int) -> Image:
         headers = {"Content-Type": "application/json"}
         url = f"https://tile.googleapis.com/v1/streetview/tiles/{z}/{x}/{y}?session={self.__session_id}&key={self.__key}&panoId={pano_id}"
         image_bytes = requests.get(url, headers=headers, timeout=10)
-        try:
-            return Image.open(io.BytesIO(image_bytes.content))
-        except PIL.UnidentifiedImageError as e:
-            print(image_bytes.text)
-            raise e
-    
+        self.analyze_response(image_bytes)
+        return Image.open(io.BytesIO(image_bytes.content))
+
     def combine_images(self, images: List[List[Image]], width: int, height: int) -> Image:
         image_width, image_height = images[0][0].size
         total_width = image_width * width
         total_height = image_height * height
         final_image = Image.new("RGB", (total_width, total_height))
-        
+
         for y, y_offset in enumerate(range(0, total_height, image_height)):
             for x, x_offset in enumerate(range(0, total_width, image_width)):
                 final_image.paste(images[y][x], (x_offset,y_offset))
@@ -85,18 +92,28 @@ class Handle:
         pano_ids = self.get_pano_ids(coordinates)
         combined_images = []
         for pano_id in pano_ids:
-            metadata = self.get_metadata(pano_id)
-            #image_height = metadata[I]
-            max_x = 1
-            max_y = 1
-            print(max_x,max_y)
             images = []
-            for y in range(max_y):
+            max_x = 0
+            max_y = 0
+            y=0
+            run = True
+            while run:
                 images.append([])
-                for x in range(max_x):
-                    print(x, y)
-                    image = self.get_tile(pano_id, z, x, y)
+                x = 0
+                while run:
+                    try:
+                        image = self.get_tile(pano_id, z, x, y)
+                    except RuntimeError:
+                        if x == 0:
+                            run = False
+                        break
                     images[-1].append(image)
+                    if run:
+                        x += 1
+                        max_x = max(x,max_x)
+                if run:
+                    y += 1
+                    max_y = max(y,max_y)
             combined_image = self.combine_images(images, max_x, max_y)
             combined_image.show()
             combined_images.append(combined_image)
@@ -107,8 +124,8 @@ def main():
     polito = Coordinate(45.0623522053154, 7.66269291001806)
     wro = Coordinate(51.10926886416323, 17.03223364904242)
     coords = [polito, wro]
-    handle.get_full_panos(coords, 0)
+    handle.get_full_panos(coords, 2)
 
 if __name__ == "__main__":
-    main()
     #cProfile.run("main()", sort="cumtime")
+    main()
