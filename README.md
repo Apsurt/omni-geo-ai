@@ -13,9 +13,9 @@ Omni Geoguessr AI aims to develop a Vision Transformer AI capable of predicting 
 
 ## Usage
 
-To run the Omni Geoguessr AI:
+To play against the Omni Geoguessr AI:
 
-1. **Integrate with Geoguessr**:
+1. **On Geoguessr.com**:
     - Add the bot's account to your Geoguessr friends.
     - Invite the bot to a private match.
     - The bot will automatically retrieve panoramas, predict locations, and submit guesses.
