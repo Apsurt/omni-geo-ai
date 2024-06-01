@@ -45,20 +45,22 @@ class Handle:
         self.__session_id = new_session_id
         os.environ["GOOGLE_SESSION"] = new_session_id
 
-    def get_pano_ids(self, coordinates: Coordinate | List[Coordinate], radius: int = 50) -> List[str]:
+    def get_pano_ids(self, coordinates: Coordinate | List[Coordinate]) -> List[str]:
         if isinstance(coordinates, Coordinate):
             coordinates = [coordinates]
         if len(coordinates) > 100:
             raise RuntimeError("Too much coordinates for one response.")
+        pano_ids = []
         headers = {"Content-Type": "application/json"}
-        payload = {"locations": [], "radius": radius}
-        url = f"https://tile.googleapis.com/v1/streetview/panoIds?session={self.__session_id}&key={self.__key}"
         for coord in coordinates:
-            loc = {"lat": coord.lat, "lng": coord.lng}
-            payload["locations"].append(loc)
-        response = requests.post(url, headers=headers, json=payload, timeout=10)
-        self.analyze_response(response)
-        return json.loads(response.text)["panoIds"]
+            url = f"https://maps.googleapis.com/maps/api/streetview/metadata?location={coord.lat},{coord.lng}&key={self.__key}"
+            response = requests.post(url, headers=headers, timeout=10)
+            response_json = json.loads(response.text)
+            if response_json["status"] == "OK":
+                pano_ids.append(response_json["pano_id"])
+            else:
+                pano_ids.append(None)
+        return pano_ids
 
     def get_metadata(self, pano_id) -> Dict:
         headers = {"Content-Type": "application/json"}
