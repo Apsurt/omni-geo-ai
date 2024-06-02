@@ -21,6 +21,7 @@ class Handle:
     def __init__(self) -> None:
         self.__session_id = os.getenv("GOOGLE_SESSION")
         self.__key = os.getenv("GOOGLE_KEY")
+        self.update_session_id()
     
     def analyze_response(self, response) -> None:
         code = int(re.findall(r"\d+", str(response))[0])
@@ -117,7 +118,6 @@ class Handle:
                     y += 1
                     max_y = max(y,max_y)
             combined_image = self.combine_images(images, max_x, max_y)
-            combined_image.show()
             combined_images.append(combined_image)
         return combined_images
 
