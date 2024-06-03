@@ -4,3 +4,4 @@ pillow >= 10.3.0
 shapely >= 2.0.4
 torch >= 2.3.0
 torchvision >= 0.18.0
+vit-pytorch >= 1.6.9
