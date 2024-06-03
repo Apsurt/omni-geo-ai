@@ -16,7 +16,7 @@ class ImageNetDataset(Dataset):
         pass
 
 class CountriesDataset(Dataset):
-    def __init__(self, device) -> None:
+    def __init__(self) -> None:
         path = "data/temp"
         dirs = os.listdir(path)
         for _dir in dirs:
@@ -29,19 +29,19 @@ class CountriesDataset(Dataset):
         self.label_dict = {}
         
         for idx, country in enumerate(dirs):
-            #print(country)
+            print(country)
             self.label_dict[idx] = country
-            country_label = [0]*self.n_classes
-            country_label[idx] = 1
-            country_label = torch.tensor(country_label, dtype=torch.float32)
-            country_label.to(device)
+            country_label = torch.tensor(idx, dtype=torch.long)
             files = os.listdir(os.path.join(path, country))
             for _file in files:
                 filepath = os.path.join(path,country,_file)
-                np_img = np.array(Image.open(filepath), dtype=np.float32)/255
-                np_img.resize((1024, 2048, 3))
+                pil_img = Image.open(filepath)
+                np_img = np.array(pil_img, dtype=np.float32)/255
+                pil_img.close()
+                np_img.resize((512, 1024, 3))
+                r,g,b = np_img[:, :, 0], np_img[:, :, 1], np_img[:, :, 2]
+                np_img = np.array(([r,g,b]))
                 img = torch.from_numpy(np_img)
-                img.to(device)
                 self.inputs.append(img)
                 self.labels.append(country_label)
         self.n_samples = len(self.inputs)
@@ -53,6 +53,5 @@ class CountriesDataset(Dataset):
         return self.n_samples
 
 if __name__ == "__main__":
-    device = torch.device("mps")
-    training_dataset = CountriesDataset(device)
+    training_dataset = CountriesDataset()
     training_dataloader = DataLoader(dataset=training_dataset, batch_size=16, shuffle=True)
