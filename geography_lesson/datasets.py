@@ -38,7 +38,6 @@ class CountriesDataset(Dataset):
                 pil_img = Image.open(filepath)
                 np_img = np.array(pil_img, dtype=np.float32)/255
                 pil_img.close()
-                np_img.resize((512, 1024, 3))
                 r,g,b = np_img[:, :, 0], np_img[:, :, 1], np_img[:, :, 2]
                 np_img = np.array(([r,g,b]))
                 img = torch.from_numpy(np_img)

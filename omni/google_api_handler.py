@@ -97,6 +97,7 @@ class Handle:
         for y, y_offset in enumerate(range(0, total_height, image_height)):
             for x, x_offset in enumerate(range(0, total_width, image_width)):
                 final_image.paste(images[y][x], (x_offset,y_offset))
+        final_image = final_image.crop((0,0,512,256))
         return final_image
 
     def get_full_panos(self, coordinates: Coordinate | List[Coordinate], z: int) -> List[Tuple[str, Image]]:
@@ -159,7 +160,7 @@ def main():
         coords.append(Coordinate(*map(float, line.split(", "))))
     batches = [coords[x:x+100] for x in range(0, len(coords), 100)]
     for batch in batches:
-        images = handle.get_full_panos(batch, 1)
+        images = handle.get_full_panos(batch, 0)
         for country, img in images:
             if img:
                 save_img(country, img)
