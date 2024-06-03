@@ -3,10 +3,10 @@ import numpy as np
 import torch
 import torchvision
 import torchvision.transforms as transforms
-from vit_pytorch import ViT
+from vit_pytorch.deepvit import DeepViT
 from datasets import CountriesDataset
 
-device = torch.device("cpu")
+device = torch.device("cuda")
 
 transform = transforms.Compose(
     [transforms.ToTensor(),
@@ -23,9 +23,9 @@ classes = list(training_set.label_dict.values())
 print(classes)
 print(len(classes))
 
-model = ViT(
-    image_size = 1024,
-    patch_size = 32,
+model = DeepViT(
+    image_size = 512,
+    patch_size = 64,
     num_classes = len(classes),
     dim = 1024,
     depth = 6,
@@ -75,8 +75,8 @@ def train_one_epoch(epoch_index):
 
 
 epoch_number = 0
-EPOCHS = 3
-best_vloss = 1_000_000.
+EPOCHS = 10
+best_vloss = 1_000_000
 
 for epoch in range(EPOCHS):
     print('EPOCH {}:'.format(epoch_number + 1))
@@ -113,6 +113,8 @@ with torch.no_grad():
         vinputs, vlabels = vdata
         voutputs = model(vinputs.to(device))
         preds = torch.argmax(torch.softmax(voutputs, 1), 1)
+        for idx, pred in enumerate(preds):
+            print(f"Guess: {validation_set.label_dict[pred.item()]}\nTrue: {validation_set.label_dict[vlabels[idx].item()]}\n")
         results = preds == vlabels.to(device)
         total += len(results)
         correct += torch.sum(results)
@@ -120,4 +122,4 @@ with torch.no_grad():
             pass
     
     acc = correct/total
-    print(f"Accuracy after training is: {acc*100}%")
+    print(f"Accuracy after training: {acc*100}%")
