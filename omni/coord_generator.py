@@ -9,14 +9,14 @@ class Coordinate_Generator:
         self._polypolygon = MultiPolygon(map(Polygon, coordinates))
         self._total_area = sum(map(lambda x: x.area, self._polypolygon.geoms))
 
-    def get_random_coordinate(self, polygon:Polygon, num_locations:int=1) -> list[Point]:
+    def _get_random_coordinate(self, polygon:Polygon, num_locations:int=1) -> list[Point]:
         lats, lons, _ = rc.coordinates_randomizer(polygon = polygon, num_locations = num_locations)
-        pointlist = map(Point, lats, lons)
-        return pointlist
+        point_list = map(Point, lats, lons)
+        return point_list
 
     def get_normalized_coord(self, total_num:int=1) -> list[Point]:
-        tempcoords = []
+        coord_list = []
         for polygon in self._polypolygon.geoms:
             weight = int(polygon.area / self._total_area * total_num)
-            tempcoords += self.get_random_coordinate(polygon, weight)
-        return tempcoords
+            coord_list += self._get_random_coordinate(polygon, weight)
+        return coord_list
