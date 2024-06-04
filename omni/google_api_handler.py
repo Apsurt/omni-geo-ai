@@ -10,12 +10,9 @@ import json
 import re
 import requests
 from PIL import Image
+from resources import Coordinate
 from dotenv import load_dotenv
 load_dotenv()
-
-class Coordinate(NamedTuple):
-    lat: float
-    lng: float
 
 class Handle:
     def __init__(self) -> None:
