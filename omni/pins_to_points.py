@@ -18,7 +18,7 @@ class Converter:
 
 def main():
     a = Converter()
-    tocopy = a.csv_to_pointstring("./pins.csv")
+    tocopy = a.csv_to_pointstring("./omni/resources/pins.csv")
     print(tocopy)
 
 if __name__ == "__main__":
