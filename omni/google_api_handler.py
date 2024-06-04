@@ -5,7 +5,7 @@ Docstring
 import os
 import io
 import cProfile
-from typing import List, NamedTuple, Dict
+from typing import List, NamedTuple, Dict, Tuple
 import json
 import re
 import requests
@@ -22,13 +22,15 @@ class Handle:
         self.__session_id = os.getenv("GOOGLE_SESSION")
         self.__key = os.getenv("GOOGLE_KEY")
         self.update_session_id()
-    
+
     def analyze_response(self, response) -> None:
         code = int(re.findall(r"\d+", str(response))[0])
         match code:
             case 200:
                 pass
             case 400:
+                raise RuntimeError(f"Bad request\n{response.text}")
+            case 404:
                 raise RuntimeError(f"Bad request\n{response.text}")
 
     def get_session_id(self) -> str:
@@ -72,6 +74,12 @@ class Handle:
         response = requests.get(url, headers=headers, params=params, timeout=10)
         self.analyze_response(response)
         return json.loads(response.text)
+    
+    def get_country_from_metadata(self, metadata: Dict) -> Dict:
+        components = metadata["addressComponents"]
+        for component in components:
+            if "country" in component["types"]:
+                return component
 
     def get_tile(self, pano_id: str, z: int, x: int, y: int) -> Image:
         headers = {"Content-Type": "application/json"}
@@ -89,12 +97,23 @@ class Handle:
         for y, y_offset in enumerate(range(0, total_height, image_height)):
             for x, x_offset in enumerate(range(0, total_width, image_width)):
                 final_image.paste(images[y][x], (x_offset,y_offset))
+        final_image = final_image.crop((0,0,512,256))
         return final_image
 
-    def get_full_panos(self, coordinates: Coordinate | List[Coordinate], z: int) -> List[Image]:
+    def get_full_panos(self, coordinates: Coordinate | List[Coordinate], z: int) -> List[Tuple[str, Image]]:
         pano_ids = self.get_pano_ids(coordinates)
+        n = len(pano_ids)
         combined_images = []
-        for pano_id in pano_ids:
+        for idx, pano_id in enumerate(pano_ids):
+            if pano_id is None:
+                combined_images.append((None, None))
+                continue
+            metadata = self.get_metadata(pano_id)
+            country_dict = self.get_country_from_metadata(metadata)
+            country = country_dict["longName"]
+            print(f"{idx+1}/{n}")
+            print(f"Getting {pano_id}, {country}")
+            print()
             images = []
             max_x = 0
             max_y = 0
@@ -118,15 +137,33 @@ class Handle:
                     y += 1
                     max_y = max(y,max_y)
             combined_image = self.combine_images(images, max_x, max_y)
-            combined_images.append(combined_image)
+            combined_images.append((country, combined_image))
         return combined_images
+
+def save_img(country, img):
+    main_dir = "data/temp/"
+    country = country.lower().replace(" ", "_")
+    print(country)
+    country_dir = main_dir+country
+    if not os.path.exists(country_dir):
+        os.mkdir(country_dir)
+    files = [f for f in os.listdir(country_dir) if os.path.isfile(os.path.join(country_dir, f))]
+    filename = f"{len(files)}.png"
+    img.save(country_dir+"/"+filename)
 
 def main():
     handle = Handle()
-    polito = Coordinate(45.0623522053154, 7.66269291001806)
-    wro = Coordinate(51.10926886416323, 17.03223364904242)
-    coords = [polito, wro]
-    handle.get_full_panos(coords, 2)
+    with open("omni/temp_coords.txt", "r") as f:
+        data = f.readlines()
+    coords = []
+    for line in data:
+        coords.append(Coordinate(*map(float, line.split(", "))))
+    batches = [coords[x:x+100] for x in range(0, len(coords), 100)]
+    for batch in batches:
+        images = handle.get_full_panos(batch, 0)
+        for country, img in images:
+            if img:
+                save_img(country, img)
 
 if __name__ == "__main__":
     #cProfile.run("main()", sort="cumtime")
