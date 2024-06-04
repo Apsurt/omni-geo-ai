@@ -1,7 +1,6 @@
 import os
 import numpy as np
 import torch
-import torchvision
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 
@@ -16,8 +15,12 @@ class ImageNetDataset(Dataset):
         pass
 
 class CountriesDataset(Dataset):
-    def __init__(self) -> None:
-        path = "data/temp"
+    def __init__(self, train: bool) -> None:
+        if train:
+            path = "data/countries/train"
+        else:
+            path = "data/countries/validate"
+            
         dirs = os.listdir(path)
         for _dir in dirs:
             if not os.path.isdir(os.path.join(path, _dir)):
@@ -52,5 +55,5 @@ class CountriesDataset(Dataset):
         return self.n_samples
 
 if __name__ == "__main__":
-    training_dataset = CountriesDataset()
+    training_dataset = CountriesDataset(train=True)
     training_dataloader = DataLoader(dataset=training_dataset, batch_size=16, shuffle=True)
