@@ -162,4 +162,5 @@ cython_debug/
 #.idea/
 omni/.vscode/settings.json
 .DS_Store
+.vscode/settings.json
 data
