@@ -1,11 +1,11 @@
 from shapely.geometry import Point, Polygon, MultiPolygon
-from resources import utils
+from resources import all_coords
 import rancoord as rc
 
 class Coordinate_Generator:
     def __init__(self) -> None:
         self._all_coords = []
-        coordinates = utils.all_coords
+        coordinates = all_coords
         self._polypolygon = MultiPolygon(map(Polygon, coordinates))
         self._total_area = sum(map(lambda x: x.area, self._polypolygon.geoms))
 
