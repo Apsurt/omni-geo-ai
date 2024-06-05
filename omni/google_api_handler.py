@@ -88,9 +88,10 @@ class Handle:
         self.analyze_response(image_bytes)
         return Image.open(io.BytesIO(image_bytes.content))
 
-    def get_full_panos(self, coordinates: Coordinate | List[Coordinate], z: int) -> List[Tuple[str, Image]]:
+    def get_full_panos(self, coordinates: Coordinate | List[Coordinate]) -> List[Tuple[str, Image]]:
         pano_ids = self.get_pano_ids(coordinates)
         n = len(pano_ids)
+        z = 0
         combined_images = []
         for idx, pano_id in enumerate(pano_ids):
             per = round((idx+1)/n*100, 2)
@@ -102,29 +103,8 @@ class Handle:
             country_dict = self.get_country_from_metadata(metadata)
             country = country_dict["longName"]
             print(f"Getting pano for {country}.")
-            images = []
-            max_x = 0
-            max_y = 0
-            y=0
-            run = True
-            while run:
-                images.append([])
-                x = 0
-                while run:
-                    try:
-                        image = self.get_tile(pano_id, z, x, y)
-                    except RuntimeError:
-                        if x == 0:
-                            run = False
-                        break
-                    images[-1].append(image)
-                    if run:
-                        x += 1
-                        max_x = max(x,max_x)
-                if run:
-                    y += 1
-                    max_y = max(y,max_y)
-            combined_image = combine_images(images, max_x, max_y)
+            image = self.get_tile(pano_id, z, 0, 0)
+            combined_image = combine_images(image)
             combined_images.append((country, combined_image))
         print()
         return combined_images

@@ -7,13 +7,13 @@ class Coordinate(NamedTuple):
     lat: float
     lng: float
 
-def combine_images(images: List[List[Image]], width: int, height: int) -> Image:
-    image_width, image_height = images[0][0].size
-    total_width = image_width * width
-    total_height = image_height * height
-    final_image = Image.new("RGB", (total_width, total_height))
-    for y, y_offset in enumerate(range(0, total_height, image_height)):
-        for x, x_offset in enumerate(range(0, total_width, image_width)):
-            final_image.paste(images[y][x], (x_offset,y_offset))
-    final_image = final_image.crop((0,0,512,256))
+def combine_images(image: Image) -> Image:
+    #image_width, image_height = images[0][0].size
+    #total_width = image_width * width
+    #total_height = image_height * height
+    #final_image = Image.new("RGB", (total_width, total_height))
+    #for y, y_offset in enumerate(range(0, total_height, image_height)):
+    #    for x, x_offset in enumerate(range(0, total_width, image_width)):
+    #        final_image.paste(images[y][x], (x_offset,y_offset))
+    final_image = image.crop((0,0,512,256))
     return final_image
