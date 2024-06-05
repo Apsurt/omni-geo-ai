@@ -34,7 +34,7 @@ class DataHub:
         batches = self.to_batches(coords)
         for idx, batch in enumerate(batches):
             print(f"BATCH {idx+1}")
-            images = self.google_api.get_full_panos(batch, 0)
+            images = self.google_api.get_full_panos(batch)
             for country, img in images:
                 if img:
                     self.save_img(path, country, img)
