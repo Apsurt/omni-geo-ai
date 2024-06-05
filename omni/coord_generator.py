@@ -1,12 +1,14 @@
 from shapely.geometry import Point, Polygon, MultiPolygon
 from resources import all_coords
+from extract_coords import Coordinator
 import rancoord as rc
 
 class Coordinate_Generator:
     def __init__(self) -> None:
         self._all_coords = []
         coordinates = all_coords
-        self._polypolygon = MultiPolygon(map(Polygon, coordinates))
+        self.coordinator = Coordinator()
+        self._polypolygon = self.coordinator.get_polypoly()
         self._total_area = sum(map(lambda x: x.area, self._polypolygon.geoms))
 
     def _get_random_coordinate(self, polygon:Polygon, num_locations:int=1) -> list[Point]:
