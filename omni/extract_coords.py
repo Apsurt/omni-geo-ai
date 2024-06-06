@@ -16,7 +16,7 @@ class Coordinator:
     def _points_to_polygon(self, coord_chunk:str) -> Polygon:
         temp_coordinates = (str(coord_chunk)[14:-14]).split(",0 ")
         del temp_coordinates[-1]
-        poly_points = map(lambda x: Point(list(map(float, x.split(",")))), temp_coordinates)
+        poly_points = map(lambda x: Point(reversed(list(map(float, x.split(","))))), temp_coordinates)
         return Polygon(poly_points)
 
     def get_polypoly(self) -> MultiPolygon:
