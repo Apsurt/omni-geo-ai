@@ -44,4 +44,4 @@ class DataHub:
 
 if __name__ == "__main__":
     dh = DataHub()
-    dh.save_data(10000, "data/countries/train")
+    dh.save_data(1000, "data/countries/train")

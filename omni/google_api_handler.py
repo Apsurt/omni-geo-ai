@@ -55,7 +55,7 @@ class Handle:
         for idx, coord in enumerate(coordinates):
             per = round((idx+1)/n*100, 2)
             print(f"{per}%", end="\r")
-            url = f"https://maps.googleapis.com/maps/api/streetview/metadata?location={coord.lat},{coord.lng}&key={self.__key}"
+            url = f"https://maps.googleapis.com/maps/api/streetview/metadata?location={coord.lng},{coord.lat}&key={self.__key}"
             response = requests.post(url, headers=headers, timeout=10)
             response_json = json.loads(response.text)
             if response_json["status"] == "OK":
