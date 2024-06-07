@@ -108,3 +108,12 @@ class Handle:
             combined_images.append((country, combined_image))
         print()
         return combined_images
+
+def main():
+    c = Handle()
+    coord = Coordinate(18.35928297441725, -66.07041677031006)
+    a = c.get_full_panos(coord)
+    print(a)
+
+
+main()
