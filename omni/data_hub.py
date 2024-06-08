@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict
 import os
 from PIL import Image
 from shapely.geometry import Point
@@ -9,7 +9,11 @@ from resources import Coordinate
 class DataHub:
     def __init__(self) -> None:
         self.google_api = Handle()
-        self.generator = Coordinate_Generator()
+        generator = Coordinate_Generator()
+
+        self.generator_dict = {}
+        for country in generator.country_list:
+            self.generator_dict[country] = generator.get_random_coord_generator(country)
 
     def save_img(self, path: str, country: str, img: Image) -> None:
         country = country.lower().replace(" ", "_")
@@ -26,22 +30,50 @@ class DataHub:
 
     def to_batches(self, v: List, batch_size: int = 100) -> List[List]:
         return [v[x:x+batch_size] for x in range(0, len(v), batch_size)]
+    
+    def get_stats(self, path: str) -> Dict:
+        dirs = os.listdir(path)
+        stats_dict = {}
+        for _dir in dirs:
+            files = os.listdir(os.path.join(path, _dir))
+            stats_dict[_dir] = len(files)
+        return stats_dict
+    
+    def get_total_data_amount(self, path: str):
+        return sum(self.get_stats(path).values())
 
-    def save_data(self, n: int, path: str) -> None:
-        saved = 0
-        points = self.generator.get_normalized_coord(n)
-        coords = list(map(self.point_to_coord, points))
-        batches = self.to_batches(coords)
-        for idx, batch in enumerate(batches):
-            print(f"BATCH {idx+1}")
-            images = self.google_api.get_full_panos(batch)
-            for country, img in images:
-                if img:
-                    self.save_img(path, country, img)
-                    saved += 1
-        print(f"Saved {saved} images")
-        print(f"Hit percentage: {saved/n*100}%")
+    def get_data(self, max_files: int, path: str, skip: List[str] = []) -> None:
+        print(f"Saving files till each country has {max_files}")
+        total = 0
+        total_saved = 0
+        stats = self.get_stats(path)
+        for country, generator in self.generator_dict.items():
+            if country in skip:
+                continue
+            saved = 0
+            try:
+                current_files = stats[country]
+            except KeyError:
+                current_files = 0
+            batch_idx = 1
+            while current_files < max_files:
+                print(f"BATCH {batch_idx} for {country}, currently has {current_files} images")
+                points = next(generator)
+                total += 100
+                coords = list(map(self.point_to_coord, points))
+                images = self.google_api.get_full_panos(coords)
+                for country_google, img in images:
+                    if img:
+                        self.save_img(path, country_google, img)
+                        saved += 1
+                        current_files += 1
+                batch_idx += 1
+            total_saved += saved
+            print(f"{country} is done, has {current_files} images")
+        print(f"Saved {total_saved} images")
+        print(f"Hit percentage: {total_saved/total*100}%")
 
 if __name__ == "__main__":
     dh = DataHub()
-    dh.save_data(1000, "data/countries/train")
+    path = "data/countries/train"
+    dh.get_data(100, path)

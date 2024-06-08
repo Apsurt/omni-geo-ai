@@ -1,55 +1,54 @@
 from shapely.geometry import Point, Polygon, MultiPolygon
 from resources import all_coords
 from extract_coords import Coordinator
-import rancoord as rc
+from typing import List, Generator
+import numpy as np
 import random
 
 class Coordinate_Generator:
     def __init__(self) -> None:
-        self._all_coords = []
-        coordinates = all_coords
-        self.coordinator = Coordinator()
-        self._polypolygon = self.coordinator.get_polypoly()
-        self._total_area = sum(map(lambda x: x.area, self._polypolygon.geoms))
+        parser = Coordinator()
+        self.positive_dict, self.negative_dict = parser.get_multipolygon_dicts()
+        self.country_list = list(self.positive_dict.keys())
 
-    def _get_random_coordinate(self, polygon:Polygon, num_locations:int=1) -> list[Point]:
-        # lats, lons, _ = rc.coordinates_randomizer(polygon = polygon, num_locations = num_locations)
-        point_list = self._draw_points(polygon, num_locations)
-        return point_list
-
-    def _draw_points(self, polygon:Polygon, num_locations:int) -> list[Point]:
-        min_x, min_y, max_x, max_y = polygon.bounds
-        points = []
-        while len(points) < num_locations:
-            random_point = Point(
-                [random.uniform(min_x, max_x), random.uniform(min_y, max_y)]
-            )
-            if self._is_correct_point(random_point):
-                points.append(random_point)
-        return points
-
-    def _is_correct_point(self, point: Point) -> bool:
-        count = 0
-        for polygon in self._polypolygon.geoms:
+    def is_in_positive(self, country: str, point: Point) -> bool:
+        multipolygon_p = self.positive_dict[country]
+        for polygon in multipolygon_p.geoms:
             if point.within(polygon):
-                count += 1
-        if count % 2 == 0:
+                return True
+    
+        return False
+    def is_in_negative(self, country: str, point: Point) -> bool:
+        try:
+            multipolygon_n = self.negative_dict[country]
+        except KeyError:
             return False
-        else:
-            return True
+        for poly_n in multipolygon_n.geoms:
+            if point.within(poly_n):
+                return True
+        return False
         
-    def get_normalized_coord(self, total_num:int=1) -> list[Point]:
+    def get_random_coord_generator(self, country: str) -> Generator[List[Point], None, None]:
+
+        multipolygon_p = self.positive_dict[country]
+
+        areas = [poly.area for poly in multipolygon_p.geoms]
+        weights = [float(i)/sum(areas) for i in areas]
         coord_list = []
-        for polygon in self._polypolygon.geoms:
-            weight = int(polygon.area / self._total_area * total_num)
-            coord_list += self._get_random_coordinate(polygon, weight)
-        return coord_list
+        while True:
 
-# def main():
-#     c = Coordinate_Generator()
-#     a = c.get_normalized_coord(10)
-#     for elem in a:
-#         print(elem)
+            poly = np.random.choice(multipolygon_p.geoms, p=weights)
+            min_x, min_y, max_x, max_y = poly.bounds
 
+            random_point = Point([random.uniform(min_x, max_x), random.uniform(min_y, max_y)])
+            if self.is_in_positive(country, random_point) and (not self.is_in_negative(country, random_point)):
+                coord_list.append(random_point)
 
-# main()
+            if len(coord_list) == 100:
+                yield coord_list
+                coord_list = []
+
+if __name__ == "__main__":
+    cg = Coordinate_Generator()
+    generator = cg.get_random_coord_generator("uk")
+    print(next(generator))

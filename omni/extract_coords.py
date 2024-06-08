@@ -1,21 +1,22 @@
 import re
 from typing import List, Tuple
 from shapely.geometry import Point, Polygon, MultiPolygon
-from omnigon import Omnigon
 
 class Coordinator:
     def __init__(self) -> None:
         with open("omni/resources/omnigeocountries.kml", "r") as f:
             self.lines = f.readlines()[4:]
 
-    def _get_all_polygons(self) -> List[Polygon]:
-        _polygons_all = []
+    def get_polygon_dicts(self) -> List[Polygon]:
         positive_dict = {}
         negative_dict = {}
         for idx, line in enumerate(self.lines):
             if "name" in line:
                 full_name = re.findall(r"(?<=>)((.+)(?=<)|(?=<))", line.strip())[0][0]
                 name = full_name[:-2]
+                if "rkiye" in name:
+                    #no comment...
+                    name = "türkiye"
                 poly_type = full_name[-1]
                 if poly_type == "p":
                     current_dict = positive_dict
@@ -32,21 +33,26 @@ class Coordinator:
                 coords = list(map(self._tuple_to_point, coords))
                 current_dict[name].append(coords)
         for name, coords in positive_dict.items():
+            poly_list = []
             for coord in coords:
-                new_omnigon = Omnigon(name, "p", coord)
-                _polygons_all.append(new_omnigon)
+                new_polygon = Polygon(coord)
+                poly_list.append(new_polygon)
+            positive_dict[name] = poly_list
         for name, coords in negative_dict.items():
+            poly_list = []
             for coord in coords:
-                new_omnigon = Omnigon(name, "n", coord)
-                _polygons_all.append(new_omnigon)
-        return _polygons_all
+                new_polygon = Polygon(coord)
+                poly_list.append(new_polygon)
+            negative_dict[name] = poly_list
+        return positive_dict, negative_dict
 
     def _tuple_to_point(self, coord: Tuple) -> Point:
         return Point(coord[0], coord[1])
 
-    def get_polypoly(self) -> MultiPolygon:
-        return MultiPolygon(self._get_all_polygons())
-
-if __name__ == "__main__":
-    coord = Coordinator()
-    coord.get_polypoly()
+    def get_multipolygon_dicts(self) -> MultiPolygon:
+        positive_dict, negative_dict = self.get_polygon_dicts()
+        for name, polygons in positive_dict.items():
+            positive_dict[name] = MultiPolygon(polygons)
+        for name, polygons in negative_dict.items():
+            negative_dict[name] = MultiPolygon(polygons)
+        return positive_dict, negative_dict

@@ -54,7 +54,7 @@ class Handle:
         n = len(coordinates)
         for idx, coord in enumerate(coordinates):
             per = round((idx+1)/n*100, 2)
-            print(f"{per}%", end="\r")
+            print(f"Getting pano_ids: {per}%", end="\r")
             url = f"https://maps.googleapis.com/maps/api/streetview/metadata?location={coord.lat},{coord.lng}&key={self.__key}"
             response = requests.post(url, headers=headers, timeout=10)
             response_json = json.loads(response.text)
@@ -76,7 +76,11 @@ class Handle:
         return json.loads(response.text)
 
     def get_country_from_metadata(self, metadata: Dict) -> Dict:
-        components = metadata["addressComponents"]
+        try:
+            components = metadata["addressComponents"]
+        except KeyError as e:
+            print(metadata)
+            raise e
         for component in components:
             if "country" in component["types"]:
                 return component
@@ -93,20 +97,22 @@ class Handle:
         n = len(pano_ids)
         z = 0
         combined_images = []
+        img_got = 0 
         for idx, pano_id in enumerate(pano_ids):
             per = round((idx+1)/n*100, 2)
-            print(f"{per}%", end="\r")
+            print(f"Getting images: {per}%", end="\r")
             if pano_id is None:
                 combined_images.append((None, None))
                 continue
+            img_got += 1
             metadata = self.get_metadata(pano_id)
             country_dict = self.get_country_from_metadata(metadata)
             country = country_dict["longName"]
-            print(f"Getting pano for {country}.")
             image = self.get_tile(pano_id, z, 0, 0)
             combined_image = combine_images(image)
             combined_images.append((country, combined_image))
         print()
+        print(f"Got {img_got} images")
         return combined_images
 
 def main():
@@ -115,5 +121,5 @@ def main():
     a = c.get_full_panos(coord)
     print(a)
 
-
-main()
+if __name__ == "__main__":
+    main()
