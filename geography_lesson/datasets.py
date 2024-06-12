@@ -3,57 +3,64 @@ import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
-
-class ImageNetDataset(Dataset):
-    def __init__(self) -> None:
-        pass
-
-    def __getitem__(self, index) -> torch.tensor:
-        pass
-
-    def __len__(self) -> int:
-        pass
+import torchvision.io
 
 class CountriesDataset(Dataset):
-    def __init__(self, train: bool) -> None:
+    def __init__(self, train: bool, transform=None, augmenter=None, aug_p=0) -> None:
         if train:
             path = "data/countries/train"
         else:
             path = "data/countries/validate"
-            
+        
+        self.transform = transform
+        self.augmenter = augmenter
+        self.aug_p = aug_p
+        
         dirs = os.listdir(path)
         for _dir in dirs:
             if not os.path.isdir(os.path.join(path, _dir)):
                 dirs.remove(_dir)
         
-        self.inputs = []
-        self.labels = []
+        self.data = []
         self.n_classes = len(dirs)
         self.label_dict = {}
-        
+
         for idx, country in enumerate(dirs):
-            print(country)
             self.label_dict[idx] = country
-            country_label = torch.tensor(idx, dtype=torch.long)
-            files = os.listdir(os.path.join(path, country))
-            for _file in files:
-                filepath = os.path.join(path,country,_file)
-                pil_img = Image.open(filepath)
-                np_img = np.array(pil_img, dtype=np.float32)/255
-                pil_img.close()
-                r,g,b = np_img[:, :, 0], np_img[:, :, 1], np_img[:, :, 2]
-                np_img = np.array(([r,g,b]))
-                img = torch.from_numpy(np_img)
-                self.inputs.append(img)
-                self.labels.append(country_label)
-        self.n_samples = len(self.inputs)
+            country_path = os.path.join(path, country)
+            files = os.listdir(country_path)
+            for file_name in files:
+                filepath = os.path.join(country_path, file_name)
+                data_tuple = (filepath,idx)
+                self.data.append(data_tuple)
+        
+        self.n_samples = len(self.data)
 
     def __getitem__(self, index) -> torch.tensor:
-        return self.inputs[index], self.labels[index]
+        filepath, label = self.data[index]
+        img = torchvision.io.read_image(filepath)
+        if self.augmenter:
+            if np.random.rand() <= self.aug_p:
+                img = self.augmenter(img)
+        if self.transform:
+            img = self.transform(img)
+        
+        return (img, label)
 
     def __len__(self) -> int:
         return self.n_samples
 
 if __name__ == "__main__":
-    training_dataset = CountriesDataset(train=True)
-    training_dataloader = DataLoader(dataset=training_dataset, batch_size=16, shuffle=True)
+    from torchvision import transforms
+    transform = transforms.Compose([
+    transforms.ConvertImageDtype(torch.float32),
+    transforms.ToPILImage()
+    ])
+
+    augmenter = transforms.AugMix()
+
+    training_set = CountriesDataset(train=True, transform=transform, augmenter=augmenter)
+    training_dataloader = DataLoader(dataset=training_set, batch_size=8, shuffle=True)
+    for data in training_dataloader:
+        inputs, label = data
+        exit()
