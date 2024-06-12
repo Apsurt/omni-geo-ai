@@ -5,51 +5,60 @@ from vit_pytorch.deepvit import DeepViT
 from vit_pytorch.distill import DistillableViT, DistillWrapper
 from pytorch_pretrained_vit import ViT
 from datasets import CountriesDataset
+import numpy as np
 import matplotlib.pyplot as plt
 
-device = torch.device("mps")
+device = torch.device("cuda")
+torch.cuda.empty_cache()
 
-transform = transforms.Compose(
-    [transforms.ToTensor(),
-    transforms.Normalize((0.5,), (0.5,))])
+batch_size = 32
 
-batch_size = 64
+transform = transforms.Compose([
+    transforms.ConvertImageDtype(torch.float32)
+    ])
 
-training_set = CountriesDataset(train=True)
-validation_set = CountriesDataset(train=True)
+augmenter = transforms.AugMix()
+
+training_set = CountriesDataset(train=True, transform=transform, augmenter=augmenter, aug_p=0.8)
+validation_set = CountriesDataset(train=False, transform=transform)
 training_loader = torch.utils.data.DataLoader(training_set, batch_size=batch_size, shuffle=True)
 validation_loader = torch.utils.data.DataLoader(validation_set, batch_size=batch_size, shuffle=False)
 
 print(f"Images in training set: {len(training_set)}")
 print(f"Images in validation set: {len(validation_set)}")
 
+if len(training_set.label_dict) != len(validation_set.label_dict):
+    raise ValueError("Classes in training set and validation set are different")
+
 classes = list(training_set.label_dict.values())
-print(classes)
-print(len(classes))
+print(f"{len(classes)} classes")
 
-#model = DeepViT(
-#    image_size = 512,
-#    patch_size = 64,
-#    num_classes = len(classes),
-#    dim = 1024,
-#    depth = 7,
-#    heads = 15,
-#    mlp_dim = 2048,
-#    dropout = 0.1,
-#    emb_dropout = 0.1
-#)
-
-model = DistillableViT(
+model = DeepViT(
     image_size = 512,
     patch_size = 32,
     num_classes = len(classes),
     dim = 1024,
-    depth = 18,
+    depth = 16,
     heads = 16,
-    mlp_dim = 3072,
+    mlp_dim = 4096,
     dropout = 0.1,
     emb_dropout = 0.1
 )
+
+
+#model = ViT(
+#    name = "L_32_imagenet1k",
+#    pretrained = True,
+#    image_size = 512,
+#    patches = 16,
+#    num_classes=len(classes),
+#    dim = 1024,
+#    num_layers = 24,
+#    num_heads = 16,
+#    ff_dim = 4096,
+#    dropout_rate = 0.1,
+#    attention_dropout_rate = 0.1,
+#)
 
 try:
     model.load_state_dict(torch.load("models/newest_model"))
@@ -58,29 +67,19 @@ try:
 except (RuntimeError, FileNotFoundError):
     print("Saved model invalid")
 
-teacher = ViT(
-    name = "L_32_imagenet1k",
-    pretrained = True,
-    patches = 16,
-    dim = 1024,
-    ff_dim = 2048,
-    num_heads = 8,
-    num_layers = 6,
-    attention_dropout_rate = 0.1,
-    dropout_rate = 0.1,
-    image_size = 512
-)
-
-distiller = DistillWrapper(
-    student = model,
-    teacher = teacher,
-    temperature = 3,
-    alpha = 0.5,
-    hard = False
-)
-
-
 model.to(device)
+
+#teacher.to(device)
+#
+#distiller = DistillWrapper(
+#    student = model,
+#    teacher = teacher,
+#    temperature = 3,
+#    alpha = 0.5,
+#    hard = False
+#)
+#
+#distiller.to(device)
 
 pp=0
 for p in list(model.parameters()):
@@ -94,7 +93,7 @@ print(f"Number of parameters: {round(pp/1_000_000)}M")
 loss_fn = torch.nn.CrossEntropyLoss()
 loss_fn.to(device)
 
-optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.0005, momentum=0.95)
 
 def train_one_epoch(epoch_index):
     last_loss = 0.
@@ -106,7 +105,12 @@ def train_one_epoch(epoch_index):
         optimizer.zero_grad()
 
         print("\tCalculating output")
-        outputs = model(inputs.to(device))
+        try:
+            outputs = model(inputs.to(device))
+        except torch.cuda.OutOfMemoryError as e:
+            print(torch.cuda.memory_summary(device=None, abbreviated=False))
+            raise e
+
 
         print("\tCalculating loss")
         loss = loss_fn(outputs, labels.to(device))
@@ -125,7 +129,7 @@ def train_one_epoch(epoch_index):
 avg_losses = []
 
 epoch_number = 0
-EPOCHS = 3
+EPOCHS = 0
 best_vloss = 1_000_000
 
 for epoch in range(EPOCHS):
@@ -140,10 +144,12 @@ for epoch in range(EPOCHS):
 
     with torch.no_grad():
         for i, vdata in enumerate(validation_loader):
+            print(f"Validating {i+1}/{int(np.ceil(validation_set.n_samples/batch_size))}", end="\r")
             vinputs, vlabels = vdata
             voutputs = model(vinputs.to(device))
             vloss = loss_fn(voutputs, vlabels.to(device))
             running_vloss += vloss
+        print()
 
     avg_vloss = running_vloss / (i + 1)
     print('LOSS train {} valid {}'.format(avg_loss, avg_vloss))
@@ -156,6 +162,7 @@ for epoch in range(EPOCHS):
     epoch_number += 1
 
 #accuracy test
+heatmap_grid = np.zeros((len(classes), len(classes)), dtype=np.float32)
 with torch.no_grad():
     total = 0
     correct = 0
@@ -168,13 +175,25 @@ with torch.no_grad():
         results = preds == vlabels.to(device)
         total += len(results)
         correct += torch.sum(results)
-        for idx, res in enumerate(results):
-            pass
+        for idx in range(len(preds)):
+            heatmap_grid[preds[idx]][[vlabels[idx]]] += 1
     
     acc = (correct/total).item()
     print(f"Accuracy after training: {round(acc*100, 2)}%")
 
 x = list(range(EPOCHS))
-
 plt.plot(x, avg_losses, "-")
+plt.show()
+
+f, ax = plt.subplots()
+
+ax.imshow(heatmap_grid, cmap="RdPu")
+ax.set_xticks(range(len(classes)))
+ax.set_xticklabels(classes, rotation=90)
+ax.xaxis.tick_top()
+ax.set_xlabel("True")
+ax.xaxis.set_label_position('top') 
+ax.set_yticks(range(len(classes)))
+ax.set_yticklabels(classes)
+ax.set_ylabel("Predict")
 plt.show()
