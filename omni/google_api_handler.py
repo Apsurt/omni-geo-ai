@@ -76,11 +76,7 @@ class Handle:
         return json.loads(response.text)
 
     def get_country_from_metadata(self, metadata: Dict) -> Dict:
-        try:
-            components = metadata["addressComponents"]
-        except KeyError as e:
-            print(metadata)
-            raise e
+        components = metadata["addressComponents"]
         for component in components:
             if "country" in component["types"]:
                 return component
@@ -104,10 +100,16 @@ class Handle:
             if pano_id is None:
                 combined_images.append((None, None))
                 continue
-            img_got += 1
             metadata = self.get_metadata(pano_id)
-            country_dict = self.get_country_from_metadata(metadata)
-            country = country_dict["longName"]
+            try:
+                country_dict = self.get_country_from_metadata(metadata)
+            except KeyError:
+                continue
+            try:
+                country = country_dict["longName"]
+            except TypeError:
+                continue
+            img_got += 1
             image = self.get_tile(pano_id, z, 0, 0)
             combined_image = combine_images(image)
             combined_images.append((country, combined_image))

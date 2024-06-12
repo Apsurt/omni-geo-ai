@@ -17,6 +17,9 @@ class Coordinator:
                 if "rkiye" in name:
                     #no comment...
                     name = "türkiye"
+                if "union" in name:
+                    #eh....
+                    name = "réunion"
                 poly_type = full_name[-1]
                 if poly_type == "p":
                     current_dict = positive_dict

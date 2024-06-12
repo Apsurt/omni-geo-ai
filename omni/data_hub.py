@@ -1,5 +1,6 @@
 from typing import List, Dict
 import os
+import numpy as np
 from PIL import Image
 from shapely.geometry import Point
 from google_api_handler import Handle
@@ -41,6 +42,9 @@ class DataHub:
     
     def get_total_data_amount(self, path: str):
         return sum(self.get_stats(path).values())
+    
+    def get_data_standard_deviation(self, path: str):
+        return np.std(list(self.get_stats(path).values()))
 
     def get_data(self, max_files: int, path: str, skip: List[str] = []) -> None:
         print(f"Saving files till each country has {max_files}")
@@ -63,6 +67,7 @@ class DataHub:
                 coords = list(map(self.point_to_coord, points))
                 images = self.google_api.get_full_panos(coords)
                 for country_google, img in images:
+
                     if img:
                         self.save_img(path, country_google, img)
                         saved += 1
@@ -71,9 +76,10 @@ class DataHub:
             total_saved += saved
             print(f"{country} is done, has {current_files} images")
         print(f"Saved {total_saved} images")
-        print(f"Hit percentage: {total_saved/total*100}%")
 
 if __name__ == "__main__":
     dh = DataHub()
-    path = "data/countries/train"
-    dh.get_data(100, path)
+    path = "data/countries/validate"
+    dh.get_data(10, path)
+    print(dh.get_total_data_amount(path))
+    print(dh.get_data_standard_deviation(path))
