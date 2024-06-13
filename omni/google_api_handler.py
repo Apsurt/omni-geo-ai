@@ -1,54 +1,100 @@
-"""
-Docstring
-"""
+"""Handle with google api."""
 
-import os
+from __future__ import annotations
+
 import io
-from typing import List, Dict, Tuple
 import json
+import os
 import re
+
 import requests
+from dotenv import load_dotenv
 from PIL import Image
 from resources import Coordinate, combine_images
-from dotenv import load_dotenv
+
 load_dotenv()
 
+MAX_GOOGLE_API_LOCATIONS_COUNT = 100
+
 class Handle:
-    def __init__(self) -> None:
+    """Class handling Google API."""
+
+    def __init__(self: Handle) -> None:
+        """Handle constructor."""
         self.__session_id = os.getenv("GOOGLE_SESSION")
         self.__key = os.getenv("GOOGLE_KEY")
         self.update_session_id()
 
-    def analyze_response(self, response) -> None:
+    def analyze_response(self: Handle, response: requests.Response) -> None:
+        """Anlyze response and catch errors.
+
+        :param self: self
+        :type self: Handle
+        :param response: response to check
+        :type response: requests.Response
+        :raises RuntimeError: code 400
+        :raises RuntimeError: code 404
+        """
         code = int(re.findall(r"\d+", str(response))[0])
+        msg = "Bad request\n" + response.text
         match code:
             case 200:
                 pass
             case 400:
-                raise RuntimeError(f"Bad request\n{response.text}")
+                raise RuntimeError(msg)
             case 404:
-                raise RuntimeError(f"Bad request\n{response.text}")
+                raise RuntimeError(msg)
 
-    def get_session_id(self) -> str:
+    def get_session_id(self: Handle) -> str:
+        """Get session id from google.
+
+        :param self: self
+        :type self: Handle
+        :return: session id
+        :rtype: str
+        """
         headers = {"Content-Type": "application/json"}
         params = {"mapType":  "streetview",
                   "language": "en-US",
                   "region":   "US"}
-        url = f'https://tile.googleapis.com/v1/createSession?key={self.__key}'
+        url = f"https://tile.googleapis.com/v1/createSession?key={self.__key}"
         response = requests.post(url, headers=headers, params=params, timeout=10)
         self.analyze_response(response)
         return json.loads(response.text)["session"]
 
-    def update_session_id(self) -> None:
+    def update_session_id(self: Handle) -> None:
+        """Update session id.
+
+        Gets session id from google, then saves it in class and in .env file.
+
+        :param self: self
+        :type self: Handle
+        """
         new_session_id = self.get_session_id()
         self.__session_id = new_session_id
         os.environ["GOOGLE_SESSION"] = new_session_id
 
-    def get_pano_ids(self, coordinates: Coordinate | List[Coordinate]) -> List[str]:
+    def get_pano_ids(
+        self: Handle,
+        coordinates: Coordinate | list[Coordinate],
+        ) -> list[str]:
+        """Get panorama ids from google.
+
+        Gets up to 100 panorama ids from list of locations.
+
+        :param self: self
+        :type self: Handle
+        :param coordinates: list of coordiantes
+        :type coordinates: Coordinate | list[Coordinate]
+        :raises RuntimeError: More than 100 locations
+        :return: list of pano ids
+        :rtype: list[str]
+        """
         if isinstance(coordinates, Coordinate):
             coordinates = [coordinates]
-        if len(coordinates) > 100:
-            raise RuntimeError("Too much coordinates for one response.")
+        if len(coordinates) > MAX_GOOGLE_API_LOCATIONS_COUNT:
+            msg = "Too much coordinates for one response."
+            raise RuntimeError(msg)
         pano_ids = []
         headers = {"Content-Type": "application/json"}
         n = len(coordinates)
@@ -65,7 +111,16 @@ class Handle:
         print()
         return pano_ids
 
-    def get_metadata(self, pano_id) -> Dict:
+    def get_metadata(self: Handle, pano_id: str) -> dict:
+        """Get metadata from pano id.
+
+        :param self: self
+        :type self: Handle
+        :param pano_id: pano id to get metadata for
+        :type pano_id: str
+        :return: metadata
+        :rtype: dict
+        """
         headers = {"Content-Type": "application/json"}
         params = {"mapType":  "streetview",
                   "language": "en-US",
@@ -75,25 +130,62 @@ class Handle:
         self.analyze_response(response)
         return json.loads(response.text)
 
-    def get_country_from_metadata(self, metadata: Dict) -> Dict:
+    def get_country_from_metadata(self: Handle, metadata: dict) -> dict:
+        """Search metadata for country name.
+
+        :param self: self
+        :type self: Handle
+        :param metadata: metadata
+        :type metadata: dict
+        :return: country component
+        :rtype: dict
+        """
         components = metadata["addressComponents"]
         for component in components:
             if "country" in component["types"]:
                 return component
+        return {}
 
-    def get_tile(self, pano_id: str, z: int, x: int, y: int) -> Image:
+    def get_tile(self: Handle, pano_id: str, z: int, x: int, y: int) -> Image:
+        """Get street view tile.
+
+        :param self: self
+        :type self: Handle
+        :param pano_id: pano id
+        :type pano_id: str
+        :param z: zoom level
+        :type z: int
+        :param x: x coordinate in panorama grid
+        :type x: int
+        :param y: y coordinate in panorama grid
+        :type y: int
+        :return: tile
+        :rtype: Image
+        """
         headers = {"Content-Type": "application/json"}
         url = f"https://tile.googleapis.com/v1/streetview/tiles/{z}/{x}/{y}?session={self.__session_id}&key={self.__key}&panoId={pano_id}"
         image_bytes = requests.get(url, headers=headers, timeout=10)
         self.analyze_response(image_bytes)
         return Image.open(io.BytesIO(image_bytes.content))
 
-    def get_full_panos(self, coordinates: Coordinate | List[Coordinate]) -> List[Tuple[str, Image]]:
+    def get_full_panos(
+        self: Handle,
+        coordinates: Coordinate | list[Coordinate],
+        ) -> list[tuple[str, Image]]:
+        """Get full panoramas from list of coordiantes.
+
+        :param self: self
+        :type self: Handle
+        :param coordinates: list of coordinates to get panorama for
+        :type coordinates: Coordinate | list[Coordinate]
+        :return: list of images with country names
+        :rtype: list[tuple[str, Image]]
+        """
         pano_ids = self.get_pano_ids(coordinates)
         n = len(pano_ids)
         z = 0
         combined_images = []
-        img_got = 0 
+        img_got = 0
         for idx, pano_id in enumerate(pano_ids):
             per = round((idx+1)/n*100, 2)
             print(f"Getting images: {per}%", end="\r")
@@ -116,12 +208,3 @@ class Handle:
         print()
         print(f"Got {img_got} images")
         return combined_images
-
-def main():
-    c = Handle()
-    coord = Coordinate(18.35928297441725, -66.07041677031006)
-    a = c.get_full_panos(coord)
-    print(a)
-
-if __name__ == "__main__":
-    main()
