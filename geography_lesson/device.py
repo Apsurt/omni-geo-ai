@@ -1,9 +1,16 @@
+"""Module to quickly get available device."""
+
 import torch
 
-def get_device():
+
+def get_device() -> torch.device:
+    """Get best available device.
+
+    :return: best device
+    :rtype: torch.device
+    """
     if torch.cuda.is_available():
         return torch.device("cuda")
-    elif torch.backends.mps.is_available():
+    if torch.backends.mps.is_available():
         return torch.device("mps")
-    else:
-        return torch.devicce("cpu")
+    return torch.devicce("cpu")

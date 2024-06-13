@@ -1,12 +1,10 @@
 
-import torch
-import torchvision.transforms as transforms
-from vit_pytorch.deepvit import DeepViT
-from vit_pytorch.distill import DistillableViT, DistillWrapper
-from pytorch_pretrained_vit import ViT
-from datasets import CountriesDataset
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from datasets import CountriesDataset
+from torchvision import transforms
+from vit_pytorch.deepvit import DeepViT
 
 device = torch.device("cuda")
 torch.cuda.empty_cache()
@@ -14,7 +12,7 @@ torch.cuda.empty_cache()
 batch_size = 32
 
 transform = transforms.Compose([
-    transforms.ConvertImageDtype(torch.float32)
+    transforms.ConvertImageDtype(torch.float32),
     ])
 
 augmenter = transforms.AugMix()
@@ -42,7 +40,7 @@ model = DeepViT(
     heads = 16,
     mlp_dim = 4096,
     dropout = 0.1,
-    emb_dropout = 0.1
+    emb_dropout = 0.1,
 )
 
 
@@ -120,7 +118,7 @@ def train_one_epoch(epoch_index):
         optimizer.step()
 
         last_loss = loss
-        print(f'batch {i+1} loss: {last_loss}')
+        print(f"batch {i+1} loss: {last_loss}")
         n+=1
         sum_loss += last_loss
 
@@ -133,7 +131,7 @@ EPOCHS = 0
 best_vloss = 1_000_000
 
 for epoch in range(EPOCHS):
-    print('EPOCH {}:'.format(epoch_number + 1))
+    print(f"EPOCH {epoch_number + 1}:")
 
     model.train(True)
     avg_loss = train_one_epoch(epoch_number)
@@ -152,11 +150,11 @@ for epoch in range(EPOCHS):
         print()
 
     avg_vloss = running_vloss / (i + 1)
-    print('LOSS train {} valid {}'.format(avg_loss, avg_vloss))
+    print(f"LOSS train {avg_loss} valid {avg_vloss}")
 
     if avg_vloss < best_vloss:
         best_vloss = avg_vloss
-        model_path = 'models/newest_model'
+        model_path = "models/newest_model"
         torch.save(model.state_dict(), model_path)
 
     epoch_number += 1
@@ -177,7 +175,7 @@ with torch.no_grad():
         correct += torch.sum(results)
         for idx in range(len(preds)):
             heatmap_grid[preds[idx]][[vlabels[idx]]] += 1
-    
+
     acc = (correct/total).item()
     print(f"Accuracy after training: {round(acc*100, 2)}%")
 
@@ -192,7 +190,7 @@ ax.set_xticks(range(len(classes)))
 ax.set_xticklabels(classes, rotation=90)
 ax.xaxis.tick_top()
 ax.set_xlabel("True")
-ax.xaxis.set_label_position('top') 
+ax.xaxis.set_label_position("top")
 ax.set_yticks(range(len(classes)))
 ax.set_yticklabels(classes)
 ax.set_ylabel("Predict")
