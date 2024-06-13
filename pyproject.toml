@@ -35,7 +35,7 @@ target-version = "py38"
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = []
+ignore = ["NPY002"]
 
 fixable = ["ALL"]
 unfixable = []
