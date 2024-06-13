@@ -3,7 +3,7 @@
 from typing import NamedTuple
 
 from PIL import Image
-g
+
 
 class Coordinate(NamedTuple):
     """Named tuple containing latitude and longitude."""
