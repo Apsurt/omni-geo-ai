@@ -1,13 +1,23 @@
+"""KML Parser."""
+
+from __future__ import annotations
+
 import re
-from typing import List, Tuple
-from shapely.geometry import Point, Polygon, MultiPolygon
+from pathlib import Path
+
+from shapely.geometry import MultiPolygon, Point, Polygon
+
 
 class Coordinator:
-    def __init__(self) -> None:
-        with open("omni/resources/omnigeocountries.kml", "r") as f:
+    """KML Parser."""
+
+    def __init__(self: Coordinator) -> None:
+        """Coordinator constructor."""
+        with Path.open("omni/resources/omnigeocountries.kml") as f:
             self.lines = f.readlines()[4:]
 
-    def get_polygon_dicts(self) -> List[Polygon]:
+    def get_polygon_dicts(self: Coordinator) -> list[Polygon]:
+        """Parse KML file to dictionaries."""
         positive_dict = {}
         negative_dict = {}
         for idx, line in enumerate(self.lines):
@@ -25,9 +35,9 @@ class Coordinator:
                     current_dict = positive_dict
                 if poly_type == "n":
                     current_dict = negative_dict
-                if not name in current_dict:
+                if name not in current_dict:
                     current_dict[name] = []
-            if "coordinates" in line and not "</" in line:
+            if "coordinates" in line and "</" not in line:
                 coords = re.findall(r"([-\d]+\.\d+)", self.lines[idx+1].strip())
                 coords = list(map(float, coords))
                 lons = coords[::2]
@@ -49,10 +59,11 @@ class Coordinator:
             negative_dict[name] = poly_list
         return positive_dict, negative_dict
 
-    def _tuple_to_point(self, coord: Tuple) -> Point:
+    def _tuple_to_point(self: Coordinator, coord: tuple) -> Point:
         return Point(coord[0], coord[1])
 
-    def get_multipolygon_dicts(self) -> MultiPolygon:
+    def get_multipolygon_dicts(self: Coordinator) -> MultiPolygon:
+        """Convert Polygons to MultiPolygons and returns dictionary."""
         positive_dict, negative_dict = self.get_polygon_dicts()
         for name, polygons in positive_dict.items():
             positive_dict[name] = MultiPolygon(polygons)
