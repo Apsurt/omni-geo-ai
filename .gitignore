@@ -167,3 +167,4 @@ data
 models
 .ruff_cache
 /pyproject.toml
+.benchmarks
