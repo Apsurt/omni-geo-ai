@@ -166,3 +166,4 @@ omni/.vscode/settings.json
 data
 models
 .ruff_cache
+/pyproject.toml
