@@ -11,6 +11,7 @@ def get_device() -> torch.device:
     """
     if torch.cuda.is_available():
         return torch.device("cuda")
+        torch.cuda.empty_cache()
     if torch.backends.mps.is_available():
         return torch.device("mps")
-    return torch.devicce("cpu")
+    return torch.device("cpu")
