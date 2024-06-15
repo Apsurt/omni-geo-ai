@@ -3,11 +3,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from datasets import CountriesDataset
+from device import get_device
 from torchvision import transforms
 from vit_pytorch.deepvit import DeepViT
 
-device = torch.device("cuda")
-torch.cuda.empty_cache()
+device = get_device()
 
 batch_size = 32
 
@@ -17,7 +17,7 @@ transform = transforms.Compose([
 
 augmenter = transforms.AugMix()
 
-training_set = CountriesDataset(train=True, transform=transform, augmenter=augmenter, aug_p=0.8)
+training_set = CountriesDataset(train=True, transform=transform, augmenter=None, aug_p=0.8)
 validation_set = CountriesDataset(train=False, transform=transform)
 training_loader = torch.utils.data.DataLoader(training_set, batch_size=batch_size, shuffle=True)
 validation_loader = torch.utils.data.DataLoader(validation_set, batch_size=batch_size, shuffle=False)
@@ -35,10 +35,10 @@ model = DeepViT(
     image_size = 512,
     patch_size = 32,
     num_classes = len(classes),
-    dim = 1024,
-    depth = 16,
-    heads = 16,
-    mlp_dim = 4096,
+    dim = 512,
+    depth = 8,
+    heads = 6,
+    mlp_dim = 1024,
     dropout = 0.1,
     emb_dropout = 0.1,
 )
@@ -91,7 +91,7 @@ print(f"Number of parameters: {round(pp/1_000_000)}M")
 loss_fn = torch.nn.CrossEntropyLoss()
 loss_fn.to(device)
 
-optimizer = torch.optim.SGD(model.parameters(), lr=0.0005, momentum=0.95)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
 
 def train_one_epoch(epoch_index):
     last_loss = 0.
@@ -127,7 +127,7 @@ def train_one_epoch(epoch_index):
 avg_losses = []
 
 epoch_number = 0
-EPOCHS = 0
+EPOCHS = 1
 best_vloss = 1_000_000
 
 for epoch in range(EPOCHS):
