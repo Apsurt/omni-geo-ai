@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict, Tuple
 
 import numpy as np
 
@@ -11,7 +11,6 @@ if TYPE_CHECKING:
 import torchvision.io
 from torch.utils.data import Dataset
 from torchvision import transforms
-
 
 class CountriesDataset(Dataset):
     """Custom dataset."""
@@ -22,6 +21,7 @@ class CountriesDataset(Dataset):
         transform: transforms.Compose | None = None,
         augmenter: transforms.Compose | None = None,
         aug_p: float = 0,
+        cache_size: int = 1000,
         ) -> None:
         """Dataset constructor.
 
@@ -35,6 +35,8 @@ class CountriesDataset(Dataset):
         :type augmenter: transforms.Compose | None, optional
         :param aug_p: probability of applying augment, defaults to 0
         :type aug_p: float, optional
+        :param cache_size: number of images to cache in memory, defaults to 1000
+        :type cache_size: int, optional
         """
         path = "data/countries/train" if train else "data/countries/validate"
 
@@ -42,11 +44,10 @@ class CountriesDataset(Dataset):
         self.transform = transform
         self.augmenter = augmenter
         self.aug_p = aug_p
+        self.cache_size = cache_size
+        self.cache: Dict[int, torch.Tensor] = {}
 
-        dirs = os.listdir(path)
-        for _dir in dirs:
-            if not os.path.isdir(os.path.join(path, _dir)):
-                dirs.remove(_dir)
+        dirs = [d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))]
 
         self.data = []
         self.n_classes = len(dirs)
@@ -58,23 +59,30 @@ class CountriesDataset(Dataset):
             files = os.listdir(country_path)
             for file_name in files:
                 filepath = os.path.join(country_path, file_name)
-                data_tuple = (filepath,idx)
+                data_tuple = (filepath, idx)
                 self.data.append(data_tuple)
 
         self.n_samples = len(self.data)
 
-    def __getitem__(self: CountriesDataset, index: int) -> torch.tensor:
-        """Get item dunder function.
+    def __getitem__(self: CountriesDataset, index: int) -> Tuple[torch.Tensor, int]:
+        """Get item dunder function with caching.
 
         :param self: self
         :type self: CountriesDataset
         :param index: index to get item from
         :type index: int
         :return: data
-        :rtype: torch.tensor
+        :rtype: Tuple[torch.Tensor, int]
         """
         filepath, label = self.data[index]
-        img = torchvision.io.read_image(filepath)
+
+        if index in self.cache:
+            img = self.cache[index]
+        else:
+            img = torchvision.io.read_image(filepath)
+            if len(self.cache) < self.cache_size:
+                self.cache[index] = img
+
         if self.train and self.augmenter and np.random.rand() <= self.aug_p:
             img = self.augmenter(img)
         if self.transform:
