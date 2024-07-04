@@ -1,240 +1,197 @@
-import os
-import multiprocessing
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.cuda.amp import GradScaler, autocast
-from torchvision import transforms
-import time
-from tqdm import tqdm, trange
 from datasets import CountriesDataset
-import timm
-#from vit_pytorch.deepvit import DeepViT
+from device import get_device
+from torchvision import transforms
+from vit_pytorch.deepvit import DeepViT
 
-class ImageClassifier:
-    def __init__(self, num_classes, image_size=512, patch_size=32):
-        self.device = self.get_device()
-        self.model = timm.create_model(
-            'swin_tiny_patch4_window7_224',
-            pretrained=True,
-            num_classes=num_classes
-        ).to(self.device)
-        
-        self.model.patch_embed = timm.models.swin_transformer.PatchEmbed(
-            img_size=(256, 512), patch_size=4, in_chans=3, embed_dim=128).to(self.device)
-        
-        self.criterion = nn.CrossEntropyLoss()
-        self.optimizer = optim.AdamW(self.model.parameters(), lr=0.001, weight_decay=0.01)
-        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=10)
-        self.scaler = GradScaler() if self.device.type == 'cuda' else None
+device = get_device()
 
-    def get_device(self):
-        if torch.cuda.is_available():
-            return torch.device('cuda')
-        elif torch.backends.mps.is_available():
-            return torch.device('mps')
-        else:
-            return torch.device('cpu')
+batch_size = 32
 
-    def load_model(self, path):
-        try:
-            self.model.load_state_dict(torch.load(path, map_location=self.device))
-            self.model.eval()
-            print(f"Model loaded from {path}")
-        except (RuntimeError, FileNotFoundError):
-            print("No valid saved model found. Starting from scratch.")
-
-    def save_model(self, path):
-        torch.save(self.model.state_dict(), path)
-        print(f"Model saved to {path}")
-
-    def train_epoch(self, dataloader, epoch, num_epochs):
-        self.model.train()
-        total_loss = 0.0
-        
-        with tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}", leave=False) as t:
-            for inputs, labels in t:
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
-                
-                self.optimizer.zero_grad()
-                
-                if self.device.type == 'cuda':
-                    with autocast():
-                        outputs = self.model(inputs)
-                        loss = self.criterion(outputs, labels)
-                    
-                    self.scaler.scale(loss).backward()
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                else:
-                    outputs = self.model(inputs)
-                    loss = self.criterion(outputs, labels)
-                    loss.backward()
-                    self.optimizer.step()
-                
-                total_loss += loss.item()
-                t.set_postfix(loss=f"{loss.item():.4f}")
-        
-        return total_loss / len(dataloader)
-
-    def validate(self, dataloader, epoch, num_epochs):
-        self.model.eval()
-        total_loss = 0.0
-        correct = 0
-        total = 0
-        
-        with torch.no_grad():
-            with tqdm(dataloader, desc=f"Validation {epoch+1}/{num_epochs}", leave=False) as t:
-                for inputs, labels in t:
-                    inputs, labels = inputs.to(self.device), labels.to(self.device)
-                    outputs = self.model(inputs)
-                    loss = self.criterion(outputs, labels)
-                    total_loss += loss.item()
-                    _, predicted = outputs.max(1)
-                    total += labels.size(0)
-                    correct += predicted.eq(labels).sum().item()
-                    t.set_postfix(loss=f"{loss.item():.4f}")
-        
-        accuracy = correct / total
-        avg_loss = total_loss / len(dataloader)
-        return avg_loss, accuracy
-
-    def predict(self, input_tensor):
-        self.model.eval()
-        with torch.no_grad():
-            output = self.model(input_tensor.to(self.device))
-        return output
-
-def get_data_loaders(batch_size=32):
-    transform = transforms.Compose([
-        transforms.ConvertImageDtype(torch.float32),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+transform = transforms.Compose([
+    transforms.ConvertImageDtype(torch.float32),
     ])
 
-    augmenter = transforms.AugMix()
+augmenter = transforms.AugMix()
 
-    training_set = CountriesDataset(train=True, transform=transform, augmenter=augmenter, aug_p=0.8)
-    validation_set = CountriesDataset(train=False, transform=transform)
+training_set = CountriesDataset(train=True, transform=transform, augmenter=None, aug_p=0.8)
+validation_set = CountriesDataset(train=False, transform=transform)
+training_loader = torch.utils.data.DataLoader(training_set, batch_size=batch_size, shuffle=True)
+validation_loader = torch.utils.data.DataLoader(validation_set, batch_size=batch_size, shuffle=False)
 
-    training_loader = DataLoader(training_set, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
-    validation_loader = DataLoader(validation_set, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+print(f"Images in training set: {len(training_set)}")
+print(f"Images in validation set: {len(validation_set)}")
 
-    return training_loader, validation_loader, training_set.label_dict
+if len(training_set.label_dict) != len(validation_set.label_dict):
+    raise ValueError("Classes in training set and validation set are different")
 
-def train(classifier, train_loader, val_loader, num_epochs=50, patience=5):
-    best_vloss = float('inf')
-    no_improve = 0
-    train_losses = []
-    val_losses = []
-    val_accuracies = []
+classes = list(training_set.label_dict.values())
+print(f"{len(classes)} classes")
 
-    total_start_time = time.time()
+model = DeepViT(
+    image_size = 512,
+    patch_size = 32,
+    num_classes = len(classes),
+    dim = 512,
+    depth = 8,
+    heads = 6,
+    mlp_dim = 1024,
+    dropout = 0.1,
+    emb_dropout = 0.1,
+)
 
-    with trange(num_epochs, desc="Training Progress") as pbar:
-        for epoch in pbar:
-            epoch_start_time = time.time()
-            
-            train_loss = classifier.train_epoch(train_loader, epoch, num_epochs)
-            val_loss, val_accuracy = classifier.validate(val_loader, epoch, num_epochs)
-            classifier.scheduler.step()
 
-            train_losses.append(train_loss)
-            val_losses.append(val_loss)
-            val_accuracies.append(val_accuracy)
+#model = ViT(
+#    name = "L_32_imagenet1k",
+#    pretrained = True,
+#    image_size = 512,
+#    patches = 16,
+#    num_classes=len(classes),
+#    dim = 1024,
+#    num_layers = 24,
+#    num_heads = 16,
+#    ff_dim = 4096,
+#    dropout_rate = 0.1,
+#    attention_dropout_rate = 0.1,
+#)
 
-            epoch_time = time.time() - epoch_start_time
-            total_time = time.time() - total_start_time
-            avg_epoch_time = total_time / (epoch + 1)
-            estimated_time_left = avg_epoch_time * (num_epochs - epoch - 1)
+try:
+    model.load_state_dict(torch.load("models/newest_model"))
+    model.eval()
+    print("Using saved model")
+except (RuntimeError, FileNotFoundError):
+    print("Saved model invalid")
 
-            pbar.set_postfix({
-                'Train Loss': f"{train_loss:.4f}",
-                'Val Loss': f"{val_loss:.4f}",
-                'Val Acc': f"{val_accuracy:.4f}",
-                'Epoch Time': f"{epoch_time:.2f}s",
-                'ETA': f"{estimated_time_left:.2f}s"
-            })
+model.to(device)
 
-            if val_loss < best_vloss:
-                best_vloss = val_loss
-                classifier.save_model("models/best_model.pth")
-                no_improve = 0
-            else:
-                no_improve += 1
+#teacher.to(device)
+#
+#distiller = DistillWrapper(
+#    student = model,
+#    teacher = teacher,
+#    temperature = 3,
+#    alpha = 0.5,
+#    hard = False
+#)
+#
+#distiller.to(device)
 
-            if no_improve == patience:
-                print("Early stopping")
-                break
+pp=0
+for p in list(model.parameters()):
+    nn=1
+    for s in list(p.size()):
+        nn = nn*s
+    pp += nn
 
-    total_time = time.time() - total_start_time
-    print(f"Total training time: {total_time:.2f}s")
+print(f"Number of parameters: {round(pp/1_000_000)}M")
 
-    return train_losses, val_losses, val_accuracies
+loss_fn = torch.nn.CrossEntropyLoss()
+loss_fn.to(device)
 
-def plot_training_results(train_losses, val_losses, val_accuracies):
-    plt.figure(figsize=(12, 4))
-    plt.subplot(1, 2, 1)
-    plt.plot(train_losses, label='Train Loss')
-    plt.plot(val_losses, label='Validation Loss')
-    plt.legend()
-    plt.title('Training and Validation Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
+optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
 
-    plt.subplot(1, 2, 2)
-    plt.plot(val_accuracies, label='Validation Accuracy')
-    plt.legend()
-    plt.title('Validation Accuracy')
-    plt.xlabel('Epoch')
-    plt.ylabel('Accuracy')
+def train_one_epoch(epoch_index):
+    last_loss = 0.
+    sum_loss = 0.
+    n = 0
 
-    plt.tight_layout()
-    plt.show()
+    for i, data in enumerate(training_loader):
+        inputs, labels = data
+        optimizer.zero_grad()
 
-def create_confusion_matrix(classifier, val_loader, classes):
-    classifier.model.eval()
-    heatmap_grid = np.zeros((len(classes), len(classes)), dtype=np.float32)
+        print("\tCalculating output")
+        try:
+            outputs = model(inputs.to(device))
+        except torch.cuda.OutOfMemoryError as e:
+            print(torch.cuda.memory_summary(device=None, abbreviated=False))
+            raise e
+
+
+        print("\tCalculating loss")
+        loss = loss_fn(outputs, labels.to(device))
+
+        print("\tOptimizing")
+        loss.backward()
+        optimizer.step()
+
+        last_loss = loss
+        print(f"batch {i+1} loss: {last_loss}")
+        n+=1
+        sum_loss += last_loss
+
+    return sum_loss/n
+
+avg_losses = []
+
+epoch_number = 0
+EPOCHS = 1
+best_vloss = 1_000_000
+
+for epoch in range(EPOCHS):
+    print(f"EPOCH {epoch_number + 1}:")
+
+    model.train(True)
+    avg_loss = train_one_epoch(epoch_number)
+    avg_losses.append(avg_loss.cpu().detach().numpy())
+
+    running_vloss = 0.0
+    model.eval()
 
     with torch.no_grad():
-        for inputs, labels in val_loader:
-            outputs = classifier.predict(inputs)
-            preds = torch.argmax(torch.softmax(outputs, 1), 1)
-            for pred, label in zip(preds, labels):
-                heatmap_grid[pred][label] += 1
+        for i, vdata in enumerate(validation_loader):
+            print(f"Validating {i+1}/{int(np.ceil(validation_set.n_samples/batch_size))}", end="\r")
+            vinputs, vlabels = vdata
+            voutputs = model(vinputs.to(device))
+            vloss = loss_fn(voutputs, vlabels.to(device))
+            running_vloss += vloss
+        print()
 
-    plt.figure(figsize=(12, 10))
-    plt.imshow(heatmap_grid, cmap="RdPu")
-    plt.colorbar()
-    plt.xticks(range(len(classes)), classes, rotation=90)
-    plt.yticks(range(len(classes)), classes)
-    plt.xlabel('True')
-    plt.ylabel('Predicted')
-    plt.title('Confusion Matrix')
-    plt.tight_layout()
-    plt.show()
+    avg_vloss = running_vloss / (i + 1)
+    print(f"LOSS train {avg_loss} valid {avg_vloss}")
 
-def main():
-    batch_size = 32
-    train_loader, val_loader, label_dict = get_data_loaders(batch_size)
-    classes = list(label_dict.values())
-    num_classes = len(classes)
+    if avg_vloss < best_vloss:
+        best_vloss = avg_vloss
+        model_path = "models/newest_model"
+        torch.save(model.state_dict(), model_path)
 
-    print(f"Number of classes: {num_classes}")
-    print(f"Images in training set: {len(train_loader.dataset)}")
-    print(f"Images in validation set: {len(val_loader.dataset)}")
+    epoch_number += 1
 
-    classifier = ImageClassifier(num_classes)
-    classifier.load_model("models/newest_model")
+#accuracy test
+heatmap_grid = np.zeros((len(classes), len(classes)), dtype=np.float32)
+with torch.no_grad():
+    total = 0
+    correct = 0
+    for i, vdata in enumerate(validation_loader):
+        vinputs, vlabels = vdata
+        voutputs = model(vinputs.to(device))
+        preds = torch.argmax(torch.softmax(voutputs, 1), 1)
+        for idx, pred in enumerate(preds):
+            print(f"Guess: {validation_set.label_dict[pred.item()]}\nTrue:  {validation_set.label_dict[vlabels[idx].item()]}\n")
+        results = preds == vlabels.to(device)
+        total += len(results)
+        correct += torch.sum(results)
+        for idx in range(len(preds)):
+            heatmap_grid[preds[idx]][[vlabels[idx]]] += 1
 
-    train_losses, val_losses, val_accuracies = train(classifier, train_loader, val_loader, num_epochs=1)
-    plot_training_results(train_losses, val_losses, val_accuracies)
-    create_confusion_matrix(classifier, val_loader, classes)
+    acc = (correct/total).item()
+    print(f"Accuracy after training: {round(acc*100, 2)}%")
 
-if __name__ == '__main__':
-    multiprocessing.freeze_support()
-    multiprocessing.set_start_method('spawn')
-    main()
+x = list(range(EPOCHS))
+plt.plot(x, avg_losses, "-")
+plt.show()
+
+f, ax = plt.subplots()
+
+ax.imshow(heatmap_grid, cmap="RdPu")
+ax.set_xticks(range(len(classes)))
+ax.set_xticklabels(classes, rotation=90)
+ax.xaxis.tick_top()
+ax.set_xlabel("True")
+ax.xaxis.set_label_position("top")
+ax.set_yticks(range(len(classes)))
+ax.set_yticklabels(classes)
+ax.set_ylabel("Predict")
+plt.show()
