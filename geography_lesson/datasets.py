@@ -19,7 +19,7 @@ class CountriesDataset(Dataset):
         self: CountriesDataset,
         train: bool,  # noqa: FBT001
         transform: transforms.Compose | None = None,
-        augmenter: transforms.Compose | None = None,
+        augmenter = None,
         aug_p: float = 0,
         cache_size: int = 1000,
         ) -> None:
@@ -32,7 +32,7 @@ class CountriesDataset(Dataset):
         :param transform: transform to apply to data, defaults to None
         :type transform: transforms.Compose | None, optional
         :param augmenter: augments to apply to data, defaults to None
-        :type augmenter: transforms.Compose | None, optional
+        :type augmenter: optional
         :param aug_p: probability of applying augment, defaults to 0
         :type aug_p: float, optional
         :param cache_size: number of images to cache in memory, defaults to 1000
