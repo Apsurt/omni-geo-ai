@@ -9,7 +9,7 @@ from vit_pytorch.deepvit import DeepViT
 
 device = get_device()
 
-batch_size = 32
+batch_size = 16
 
 transform = transforms.Compose([
     transforms.ConvertImageDtype(torch.float32),
