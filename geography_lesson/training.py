@@ -1,4 +1,3 @@
-import os
 import multiprocessing
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,7 +8,6 @@ from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.cuda.amp import GradScaler, autocast
 from torchvision import transforms
-from vit_pytorch.deepvit import DeepViT
 import time
 from tqdm import tqdm, trange
 from pytorch_pretrained_vit import ViT
@@ -17,25 +15,32 @@ from pytorch_pretrained_vit import ViT
 from datasets import CountriesDataset
 from device import get_device
 
+torch.backends.cudnn.benchmark = True
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+
 class ImageClassifier:
-    def __init__(self, num_classes, image_size=512, patch_size=32):
-        self.device = self.get_device()
-        print(self.device)
+    def __init__(self, num_classes, image_size=256, patches=16):
+        self.device = get_device()
         
-        self.model = ViT('B_16', pretrained=True)
+        self.model = ViT('B_16',
+                         image_size=image_size,
+                         pretrained=True,
+                         num_classes=num_classes,
+                         patches=patches,)
+        self.model.float()
+        self.model.to(self.device)
         
         self.criterion = nn.CrossEntropyLoss()
         self.optimizer = optim.AdamW(self.model.parameters(), lr=0.001, weight_decay=0.01)
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=10)
         self.scaler = GradScaler() if self.device.type == 'cuda' else None
-
-    def get_device(self):
-        if torch.cuda.is_available():
-            return torch.device('cuda')
-        elif torch.backends.mps.is_available():
-            return torch.device('mps')
-        else:
-            return torch.device('cpu')
+    
+    def print_model_params(self):
+        total_params = sum(p.numel() for p in self.model.parameters())
+        trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        print(f"Total parameters: {total_params:,}")
+        print(f"Trainable parameters: {trainable_params:,}")
 
     def load_model(self, path):
         try:
@@ -100,34 +105,15 @@ class ImageClassifier:
         avg_loss = total_loss / len(dataloader)
         return avg_loss, accuracy
 
-    def validate(self, dataloader):
-        self.model.eval()
-        total_loss = 0.0
-        correct = 0
-        total = 0
-        
-        with torch.no_grad():
-            for inputs, labels in tqdm(dataloader, desc="Validating", leave=False):
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
-                outputs = self.model(inputs)
-                loss = self.criterion(outputs, labels)
-                total_loss += loss.item()
-                _, predicted = outputs.max(1)
-                total += labels.size(0)
-                correct += predicted.eq(labels).sum().item()
-        
-        accuracy = correct / total
-        avg_loss = total_loss / len(dataloader)
-        return avg_loss, accuracy
-
     def predict(self, input_tensor):
         self.model.eval()
         with torch.no_grad():
             output = self.model(input_tensor.to(self.device))
         return output
 
-def get_data_loaders(batch_size=32):
+def get_data_loaders(batch_size=32, image_size=256):
     transform = transforms.Compose([
+        transforms.Resize((image_size, image_size)),
         transforms.ConvertImageDtype(torch.float32),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
@@ -137,8 +123,8 @@ def get_data_loaders(batch_size=32):
     training_set = CountriesDataset(train=True, transform=transform, augmenter=augmenter, aug_p=0.8)
     validation_set = CountriesDataset(train=False, transform=transform)
 
-    training_loader = DataLoader(training_set, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
-    validation_loader = DataLoader(validation_set, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+    training_loader = DataLoader(training_set, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True, persistent_workers=True)
+    validation_loader = DataLoader(validation_set, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True, persistent_workers=True)
 
     return training_loader, validation_loader, training_set.label_dict
 
@@ -235,8 +221,9 @@ def create_confusion_matrix(classifier, val_loader, classes):
     plt.show()
 
 def main():
-    batch_size = 1
-    train_loader, val_loader, label_dict = get_data_loaders(batch_size)
+    batch_size = 32
+    image_size = 256
+    train_loader, val_loader, label_dict = get_data_loaders(batch_size, image_size)
     classes = list(label_dict.values())
     num_classes = len(classes)
 
@@ -244,7 +231,8 @@ def main():
     print(f"Images in training set: {len(train_loader.dataset)}")
     print(f"Images in validation set: {len(val_loader.dataset)}")
 
-    classifier = ImageClassifier(num_classes)
+    classifier = ImageClassifier(num_classes, image_size, 16)
+    classifier.print_model_params()
     classifier.load_model("models/newest_model")
 
     train_losses, val_losses, val_accuracies = train(classifier, train_loader, val_loader)

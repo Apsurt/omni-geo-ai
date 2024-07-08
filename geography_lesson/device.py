@@ -10,8 +10,8 @@ def get_device() -> torch.device:
     :rtype: torch.device
     """
     if torch.cuda.is_available():
-        return torch.device("cuda")
         torch.cuda.empty_cache()
+        return torch.device("cuda")
     if torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
