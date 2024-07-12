@@ -18,6 +18,8 @@ from functools import partial
 from datasets import CountriesDataset
 from device import get_device
 
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -100,10 +102,11 @@ class ImageClassifier:
                 total_loss += loss.item()
                 t.set_postfix(loss=f"{loss.item():.4f}")
                 
-                if self.debug and batch_idx % 10 == 0:
+                if self.debug and batch_idx % 5 == 0:
                     print(f"\nDebug - Epoch: {epoch+1}, Batch: {batch_idx+1}/{len(dataloader)}, Loss: {loss.item():.4f}")
                     print(f"Input shape: {inputs.shape}, Output shape: {outputs.shape}")
                     print(f"Labels: {labels[:5]}, Predictions: {outputs.argmax(1)[:5]}")
+                    print(dataloader.dataset.get_cache_stats())
         
         return total_loss / len(dataloader)
 
@@ -139,7 +142,7 @@ class ImageClassifier:
             output = self.model(input_tensor.to(self.device))
         return output
 
-def get_data_loaders(batch_size=32, image_size=256, num_workers=4):
+def get_data_loaders(batch_size=32, image_size=256, num_workers=4, debug=False, preload=False, cache_size=1000):
     transform = transforms.Compose([
         transforms.Resize((image_size, image_size)),
         transforms.ConvertImageDtype(torch.float32),
@@ -148,8 +151,8 @@ def get_data_loaders(batch_size=32, image_size=256, num_workers=4):
 
     augmenter = transforms.AugMix()
 
-    training_set = CountriesDataset(train=True, transform=transform, augmenter=augmenter, aug_p=0.8)
-    validation_set = CountriesDataset(train=False, transform=transform)
+    training_set = CountriesDataset(train=True, transform=transform, augmenter=augmenter, aug_p=0.8, debug=debug, preload=preload, cache_size=cache_size)
+    validation_set = CountriesDataset(train=False, transform=transform, debug=debug, preload=preload, cache_size=cache_size)
 
     training_loader = DataLoader(training_set, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
     validation_loader = DataLoader(validation_set, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
@@ -244,9 +247,10 @@ def create_confusion_matrix(classifier, val_loader, classes):
     plt.tight_layout()
     plt.show()
 
-def run_training(num_classes, image_size, batch_size, epochs, debug=False):
-    train_loader, val_loader, label_dict = get_data_loaders(batch_size, image_size)
+def run_training(image_size, batch_size, epochs, debug=False, cache_size=1000):
+    train_loader, val_loader, label_dict = get_data_loaders(batch_size, image_size, debug=debug, preload=True, cache_size=cache_size)
     classes = list(label_dict.values())
+    num_classes = len(train_loader.dataset.label_dict)
 
     print(f"Number of classes: {num_classes}")
     print(f"Images in training set: {len(train_loader.dataset)}")
@@ -254,23 +258,23 @@ def run_training(num_classes, image_size, batch_size, epochs, debug=False):
 
     classifier = ImageClassifier(num_classes, image_size, 16, debug)
     classifier.print_model_params()
-    classifier.load_model("models/newest_model")
+    classifier.load_model("models/best_model.pth")
 
     train_losses, val_losses, val_accuracies = train(classifier, train_loader, val_loader, epochs)
-    plot_training_results(train_losses, val_losses, val_accuracies)
     create_confusion_matrix(classifier, val_loader, classes)
+    plot_training_results(train_losses, val_losses, val_accuracies)
 
 def main():
     try:
         batch_size = 32
         image_size = 256
         epochs = 10
-        num_classes = 93
+        cache_size = 3000
         debug = True
 
         mp.set_start_method('spawn', force=True)
 
-        p = mp.Process(target=run_training, args=(num_classes, image_size, batch_size, epochs, debug))
+        p = mp.Process(target=run_training, args=(image_size, batch_size, epochs, debug, cache_size))
         p.start()
         p.join()
         
