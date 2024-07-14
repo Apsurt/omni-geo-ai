@@ -168,6 +168,6 @@ class DataHub:
 if __name__ == "__main__":
     dh = DataHub()
     path = "data/countries/train"
-    dh.get_data(150, path, ["israel"])
+    dh.get_data(300, path, ["israel"])
     print(dh.get_total_data_amount(path))
     print(dh.get_data_standard_deviation(path))

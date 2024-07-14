@@ -13,7 +13,6 @@ from tqdm import tqdm, trange
 from pytorch_pretrained_vit import ViT
 import sys
 import multiprocessing as mp
-from functools import partial
 
 from datasets import CountriesDataset
 from device import get_device
@@ -39,7 +38,7 @@ class ImageClassifier:
         self.model.float()
         self.model.to(self.device)
         
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss().to(self.device)
         self.optimizer = optim.AdamW(filter(lambda p: p.requires_grad, self.model.parameters()), lr=0.0001, weight_decay=0.01)
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=10)
         self.scaler = GradScaler() if self.device.type == 'cuda' else None
@@ -68,8 +67,9 @@ class ImageClassifier:
             self.model.load_state_dict(torch.load(path, map_location=self.device))
             self.model.eval()
             print(f"Model loaded from {path}")
-        except (RuntimeError, FileNotFoundError):
+        except (RuntimeError, FileNotFoundError) as e:
             print("No valid saved model found. Starting from scratch.")
+            raise e
 
     def save_model(self, path):
         torch.save(self.model.state_dict(), path)
@@ -81,16 +81,21 @@ class ImageClassifier:
         
         with tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}", leave=False) as t:
             for batch_idx, (inputs, labels) in enumerate(t):
+                print("\nLoading inputs")
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
                 
                 self.optimizer.zero_grad()
                 
                 if self.device.type == 'cuda':
                     with autocast():
+                        print("Calculating outputs")
                         outputs = self.model(inputs)
+                        print("Calculating loss")
                         loss = self.criterion(outputs, labels)
                     
+                    print("Scaler step")
                     self.scaler.scale(loss).backward()
+                    print("Optimizer step")
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                 else:
@@ -106,14 +111,14 @@ class ImageClassifier:
                     print(f"\nDebug - Epoch: {epoch+1}, Batch: {batch_idx+1}/{len(dataloader)}, Loss: {loss.item():.4f}")
                     print(f"Input shape: {inputs.shape}, Output shape: {outputs.shape}")
                     print(f"Labels: {labels[:5]}, Predictions: {outputs.argmax(1)[:5]}")
-                    print(dataloader.dataset.get_cache_stats())
         
         return total_loss / len(dataloader)
 
     def validate(self, dataloader, epoch, num_epochs):
         self.model.eval()
         total_loss = 0.0
-        correct = 0
+        correct_top1 = 0
+        correct_top5 = 0
         total = 0
         
         with torch.no_grad():
@@ -123,18 +128,30 @@ class ImageClassifier:
                     outputs = self.model(inputs)
                     loss = self.criterion(outputs, labels)
                     total_loss += loss.item()
+
+
+                    # Top-1 Accuracy
                     _, predicted = outputs.max(1)
+                    correct_top1 += predicted.eq(labels).sum().item()
+
+                    # Top-5 Accuracy
+                    _, top5_predicted = outputs.topk(5, 1, largest=True, sorted=True)
+                    correct_top5 += top5_predicted.eq(labels.view(-1, 1).expand_as(top5_predicted)).sum().item()
+
                     total += labels.size(0)
-                    correct += predicted.eq(labels).sum().item()
+                    
+                    top1_accuracy = correct_top1 / total
+                    top5_accuracy = correct_top5 / total
                     t.set_postfix(loss=f"{loss.item():.4f}")
                     
                     if self.debug and batch_idx % 10 == 0:
                         print(f"\nDebug - Validation - Epoch: {epoch+1}, Batch: {batch_idx+1}/{len(dataloader)}, Loss: {loss.item():.4f}")
-                        print(f"Accuracy: {correct/total:.4f}")
+                        print(f"Top-1 Accuracy: {top1_accuracy:.4f}, Top-5 Accuracy: {top5_accuracy:.4f}")
         
-        accuracy = correct / total
+        final_top1_accuracy = correct_top1 / total
+        final_top5_accuracy = correct_top5 / total
         avg_loss = total_loss / len(dataloader)
-        return avg_loss, accuracy
+        return avg_loss, final_top1_accuracy
 
     def predict(self, input_tensor):
         self.model.eval()
@@ -152,7 +169,7 @@ def get_data_loaders(batch_size=32, image_size=256, num_workers=4, debug=False, 
     augmenter = transforms.AugMix()
 
     training_set = CountriesDataset(train=True, transform=transform, augmenter=augmenter, aug_p=0.8, debug=debug, preload=preload, cache_size=cache_size)
-    validation_set = CountriesDataset(train=False, transform=transform, debug=debug, preload=preload, cache_size=cache_size)
+    validation_set = CountriesDataset(train=False, transform=transform, debug=debug, preload=preload, cache_size=0)
 
     training_loader = DataLoader(training_set, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
     validation_loader = DataLoader(validation_set, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
@@ -266,10 +283,10 @@ def run_training(image_size, batch_size, epochs, debug=False, cache_size=1000):
 
 def main():
     try:
-        batch_size = 32
+        batch_size = 64
         image_size = 256
-        epochs = 10
-        cache_size = 3000
+        epochs = 2
+        cache_size = 5000
         debug = True
 
         mp.set_start_method('spawn', force=True)
