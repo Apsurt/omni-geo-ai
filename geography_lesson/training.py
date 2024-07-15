@@ -1,4 +1,3 @@
-import multiprocessing
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -6,12 +5,11 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.cuda.amp import GradScaler, autocast
 from torchvision import transforms
+from torchvision.transforms import autoaugment, RandomErasing
 import time
-from tqdm import tqdm, trange
+from tqdm import tqdm
 from pytorch_pretrained_vit import ViT
-import sys
 import multiprocessing as mp
 
 from datasets import CountriesDataset
@@ -19,9 +17,9 @@ from device import get_device
 
 if torch.cuda.is_available():
     torch.cuda.empty_cache()
-torch.backends.cudnn.benchmark = True
-torch.backends.cuda.matmul.allow_tf32 = True
-torch.backends.cudnn.allow_tf32 = True
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
 
 class ImageClassifier:
     def __init__(self, num_classes, image_size=256, patches=16, debug=False):
@@ -39,9 +37,8 @@ class ImageClassifier:
         self.model.to(self.device)
         
         self.criterion = nn.CrossEntropyLoss().to(self.device)
-        self.optimizer = optim.AdamW(filter(lambda p: p.requires_grad, self.model.parameters()), lr=0.0001, weight_decay=0.01)
-        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=10)
-        self.scaler = GradScaler() if self.device.type == 'cuda' else None
+        self.optimizer = optim.SGD(filter(lambda p: p.requires_grad, self.model.parameters()), lr=0.002, weight_decay=0.01, momentum=0.9, nesterov=True)
+        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=20)
     
     def print_model_params(self):
         total_params = sum(p.numel() for p in self.model.parameters())
@@ -69,7 +66,6 @@ class ImageClassifier:
             print(f"Model loaded from {path}")
         except (RuntimeError, FileNotFoundError) as e:
             print("No valid saved model found. Starting from scratch.")
-            raise e
 
     def save_model(self, path):
         torch.save(self.model.state_dict(), path)
@@ -81,33 +77,20 @@ class ImageClassifier:
         
         with tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}", leave=False) as t:
             for batch_idx, (inputs, labels) in enumerate(t):
-                print("\nLoading inputs")
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
                 
                 self.optimizer.zero_grad()
                 
-                if self.device.type == 'cuda':
-                    with autocast():
-                        print("Calculating outputs")
-                        outputs = self.model(inputs)
-                        print("Calculating loss")
-                        loss = self.criterion(outputs, labels)
-                    
-                    print("Scaler step")
-                    self.scaler.scale(loss).backward()
-                    print("Optimizer step")
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                else:
-                    outputs = self.model(inputs)
-                    loss = self.criterion(outputs, labels)
-                    loss.backward()
-                    self.optimizer.step()
-                
+                outputs = self.model(inputs)
+                loss = self.criterion(outputs, labels)
+                loss.backward()
+                self.optimizer.step()
+                self.optimizer.zero_grad()
+            
                 total_loss += loss.item()
                 t.set_postfix(loss=f"{loss.item():.4f}")
                 
-                if self.debug and batch_idx % 5 == 0:
+                if self.debug and batch_idx % (len(dataloader)//10) == 0:
                     print(f"\nDebug - Epoch: {epoch+1}, Batch: {batch_idx+1}/{len(dataloader)}, Loss: {loss.item():.4f}")
                     print(f"Input shape: {inputs.shape}, Output shape: {outputs.shape}")
                     print(f"Labels: {labels[:5]}, Predictions: {outputs.argmax(1)[:5]}")
@@ -150,7 +133,7 @@ class ImageClassifier:
                     top5_accuracy = correct_top5 / total
                     t.set_postfix(loss=f"{loss.item():.4f}")
                     
-                    if self.debug and batch_idx % 10 == 0:
+                    if self.debug and batch_idx % (len(dataloader)//10) == 0:
                         print(f"\nDebug - Validation - Epoch: {epoch+1}, Batch: {batch_idx+1}/{len(dataloader)}, Loss: {loss.item():.4f}")
                         print(f"Top-1 Accuracy: {top1_accuracy:.4f}, Top-5 Accuracy: {top5_accuracy:.4f}")
         
@@ -166,16 +149,23 @@ class ImageClassifier:
         return output
 
 def get_data_loaders(batch_size=32, image_size=256, num_workers=4, debug=False, preload=False, cache_size=1000):
-    transform = transforms.Compose([
+    train_transform = transforms.Compose([
+        transforms.RandomResizedCrop(image_size, scale=(0.8, 1.0)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+        autoaugment.RandAugment(num_ops=2, magnitude=7),
+        transforms.ConvertImageDtype(torch.float32),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+
+    val_transform = transforms.Compose([
         transforms.Resize((image_size, image_size)),
         transforms.ConvertImageDtype(torch.float32),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
-    augmenter = transforms.AugMix()
-
-    training_set = CountriesDataset(train=True, transform=transform, augmenter=augmenter, aug_p=0.8, debug=debug, preload=preload, cache_size=cache_size)
-    validation_set = CountriesDataset(train=False, transform=transform, debug=debug, preload=preload, cache_size=0)
+    training_set = CountriesDataset(train=True, transform=train_transform, debug=debug, preload=preload, cache_size=cache_size, max_class_file_count=600)
+    validation_set = CountriesDataset(train=False, transform=val_transform, debug=debug, preload=preload, cache_size=0)
 
     training_loader = DataLoader(training_set, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
     validation_loader = DataLoader(validation_set, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
@@ -220,7 +210,7 @@ def train(classifier, train_loader, val_loader, num_epochs=50, patience=5):
                 break
         
         if len(val_losses) == 0:
-            val_loss, val_accuracy, heatmap_grid = classifier.validate(val_loader, 1, num_epochs)
+            val_loss, val_accuracy, heatmap_grid = classifier.validate(val_loader, 0, 1)
 
     except KeyboardInterrupt:
         print("\nTraining interrupted. Saving current model state...")
@@ -285,10 +275,10 @@ def run_training(image_size, batch_size, epochs, debug=False, cache_size=1000):
 
 def main():
     try:
-        batch_size = 64
+        batch_size = 16
         image_size = 256
         epochs = 0
-        cache_size = 5000
+        cache_size = 20000
         debug = True
 
         mp.set_start_method('spawn', force=True)

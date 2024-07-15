@@ -24,9 +24,8 @@ class CountriesDataset(Dataset):
         self: CountriesDataset,
         train: bool,  # noqa: FBT001
         transform: transforms.Compose | None = None,
-        augmenter = None,
-        aug_p: float = 0,
         cache_size: int = 1000,
+        max_class_file_count: int | None = None,
         debug: bool = False,
         preload: bool = False,
         ) -> None:
@@ -38,10 +37,6 @@ class CountriesDataset(Dataset):
         :type train: bool
         :param transform: transform to apply to data, defaults to None
         :type transform: transforms.Compose | None, optional
-        :param augmenter: augments to apply to data, defaults to None
-        :type augmenter: optional
-        :param aug_p: probability of applying augment, defaults to 0
-        :type aug_p: float, optional
         :param cache_size: number of images to cache in memory, defaults to 1000
         :type cache_size: int, optional
         """
@@ -49,10 +44,11 @@ class CountriesDataset(Dataset):
 
         self.train = train
         self.transform = transform
-        self.augmenter = augmenter
-        self.aug_p = aug_p
         self.cache_size = cache_size
         self.cache: Dict[int, torch.Tensor] = {}
+        self.max_class_file_count = max_class_file_count
+        if self.max_class_file_count is None:
+            self.max_class_file_count = float("inf")
         self.debug = debug
         self.cache_hits = 0
         self.total_accesses = 0
@@ -68,6 +64,8 @@ class CountriesDataset(Dataset):
             self.label_dict[idx] = country
             country_path = os.path.join(path, country)
             files = os.listdir(country_path)
+            if len(files) > self.max_class_file_count:
+                files = np.random.choice(files, self.max_class_file_count)
             for file_name in files:
                 filepath = os.path.join(country_path, file_name)
                 data_tuple = (filepath, idx)
@@ -82,7 +80,7 @@ class CountriesDataset(Dataset):
             print(f"Dataset initialized with {self.n_samples} samples")
             print(f"Cache size: {self.cache_size}")
         
-        if preload:
+        if preload and self.cache_size>0:
             self.preload_cache()
 
     def preload_cache(self):
@@ -132,12 +130,6 @@ class CountriesDataset(Dataset):
 
         load_time = time.time() - start_time
 
-        if self.train and self.augmenter and np.random.rand() <= self.aug_p:
-            aug_start = time.time()
-            img = self.augmenter(img)
-            aug_time = time.time() - aug_start
-        else:
-            aug_time = 0
         if self.transform:
             transform_start = time.time()
             img = self.transform(img)
