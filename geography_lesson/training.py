@@ -120,12 +120,18 @@ class ImageClassifier:
         correct_top1 = 0
         correct_top5 = 0
         total = 0
+        n_classes = dataloader.dataset.n_classes
+
+        heatmap_grid = np.zeros((n_classes, n_classes), dtype=np.float32)
         
         with torch.no_grad():
             with tqdm(dataloader, desc=f"Validation {epoch+1}/{num_epochs}", leave=False) as t:
                 for batch_idx, (inputs, labels) in enumerate(t):
                     inputs, labels = inputs.to(self.device), labels.to(self.device)
                     outputs = self.model(inputs)
+                    preds = torch.argmax(torch.softmax(outputs, 1), 1)
+                    for pred, label in zip(preds, labels):
+                        heatmap_grid[pred][label] += 1
                     loss = self.criterion(outputs, labels)
                     total_loss += loss.item()
 
@@ -151,7 +157,7 @@ class ImageClassifier:
         final_top1_accuracy = correct_top1 / total
         final_top5_accuracy = correct_top5 / total
         avg_loss = total_loss / len(dataloader)
-        return avg_loss, final_top1_accuracy
+        return avg_loss, final_top1_accuracy, heatmap_grid
 
     def predict(self, input_tensor):
         self.model.eval()
@@ -184,13 +190,16 @@ def train(classifier, train_loader, val_loader, num_epochs=50, patience=5):
     val_accuracies = []
 
     total_start_time = time.time()
+    
+    n_classes = train_loader.dataset.n_classes
+    heatmap_grid = np.zeros((n_classes, n_classes), dtype=np.float32)
 
     try:
         for epoch in range(num_epochs):
             print(f"\nEpoch {epoch+1}/{num_epochs}")
             
             train_loss = classifier.train_epoch(train_loader, epoch, num_epochs)
-            val_loss, val_accuracy = classifier.validate(val_loader, epoch, num_epochs)
+            val_loss, val_accuracy, heatmap_grid = classifier.validate(val_loader, epoch, num_epochs)
             classifier.scheduler.step()
 
             train_losses.append(train_loss)
@@ -209,6 +218,9 @@ def train(classifier, train_loader, val_loader, num_epochs=50, patience=5):
             if no_improve == patience:
                 print("Early stopping")
                 break
+        
+        if len(val_losses) == 0:
+            val_loss, val_accuracy, heatmap_grid = classifier.validate(val_loader, 1, num_epochs)
 
     except KeyboardInterrupt:
         print("\nTraining interrupted. Saving current model state...")
@@ -220,7 +232,7 @@ def train(classifier, train_loader, val_loader, num_epochs=50, patience=5):
         total_time = time.time() - total_start_time
         print(f"Total training time: {total_time:.2f}s")
 
-    return train_losses, val_losses, val_accuracies
+    return train_losses, val_losses, val_accuracies, heatmap_grid
 
 def plot_training_results(train_losses, val_losses, val_accuracies):
     plt.figure(figsize=(12, 4))
@@ -242,17 +254,7 @@ def plot_training_results(train_losses, val_losses, val_accuracies):
     plt.tight_layout()
     plt.show()
 
-def create_confusion_matrix(classifier, val_loader, classes):
-    classifier.model.eval()
-    heatmap_grid = np.zeros((len(classes), len(classes)), dtype=np.float32)
-
-    with torch.no_grad():
-        for inputs, labels in val_loader:
-            outputs = classifier.predict(inputs)
-            preds = torch.argmax(torch.softmax(outputs, 1), 1)
-            for pred, label in zip(preds, labels):
-                heatmap_grid[pred][label] += 1
-
+def create_confusion_matrix(heatmap_grid, classes):
     plt.figure(figsize=(12, 10))
     plt.imshow(heatmap_grid, cmap="RdPu")
     plt.colorbar()
@@ -277,15 +279,15 @@ def run_training(image_size, batch_size, epochs, debug=False, cache_size=1000):
     classifier.print_model_params()
     classifier.load_model("models/best_model.pth")
 
-    train_losses, val_losses, val_accuracies = train(classifier, train_loader, val_loader, epochs)
-    create_confusion_matrix(classifier, val_loader, classes)
+    train_losses, val_losses, val_accuracies, heatmap_grid = train(classifier, train_loader, val_loader, epochs)
+    create_confusion_matrix(heatmap_grid, classes)
     plot_training_results(train_losses, val_losses, val_accuracies)
 
 def main():
     try:
         batch_size = 64
         image_size = 256
-        epochs = 2
+        epochs = 0
         cache_size = 5000
         debug = True
 
