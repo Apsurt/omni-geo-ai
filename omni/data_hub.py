@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from coord_generator import CoordinateGenerator
 from google_api_handler import Handle
+from image_preprocessing import process_image
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -44,7 +45,10 @@ class DataHub:
         if not os.path.exists(country_dir):
             os.mkdir(country_dir)
         files = [f for f in os.listdir(country_dir) if os.path.isfile(os.path.join(country_dir, f))]
-        filename = f"{len(files)}.png"
+        n_files = len(files)
+        number = n_files // 2
+        half = "left" if n_files % 2 == 0 else "right"
+        filename = f"{number}_{half}.png"
         img.save(country_dir+"/"+filename)
 
     def point_to_coord(self: DataHub, point: Point) -> Coordinate:
@@ -153,13 +157,21 @@ class DataHub:
                 points = next(generator)
                 total += 100
                 coords = list(map(self.point_to_coord, points))
-                images = self.google_api.get_full_panos(coords)
+                try:
+                    images = self.google_api.get_full_panos(coords)
+                except KeyboardInterrupt as e:
+                    raise e
+                except:
+                    continue
                 for country_google, img in images:
 
                     if img:
-                        self.save_img(path, country_google, img)
-                        saved += 1
-                        current_files += 1
+                        img_left, img_right = process_image(img)
+                        self.save_img(path, country_google, img_left)
+                        self.save_img(path, country_google, img_right)
+                        saved += 2
+                        stats = self.get_stats(path)
+                        current_files = stats[country]
                 batch_idx += 1
             total_saved += saved
             print(f"{country} is done, has {current_files} images")
@@ -168,6 +180,6 @@ class DataHub:
 if __name__ == "__main__":
     dh = DataHub()
     path = "data/countries/train"
-    dh.get_data(300, path, ["israel"])
+    dh.get_data(700, path)
     print(dh.get_total_data_amount(path))
     print(dh.get_data_standard_deviation(path))

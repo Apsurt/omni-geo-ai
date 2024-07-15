@@ -199,12 +199,11 @@ class Handle:
                 continue
             try:
                 country = country_dict["longName"]
-            except TypeError:
+            except (TypeError, KeyError):
                 continue
             img_got += 1
             image = self.get_tile(pano_id, z, 0, 0)
             combined_image = combine_images(image)
             combined_images.append((country, combined_image))
         print()
-        print(f"Got {img_got} images")
         return combined_images
