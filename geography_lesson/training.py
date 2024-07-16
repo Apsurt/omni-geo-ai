@@ -38,7 +38,7 @@ class ImageClassifier:
         
         self.criterion = nn.CrossEntropyLoss().to(self.device)
         self.optimizer = optim.SGD(filter(lambda p: p.requires_grad, self.model.parameters()), lr=0.002, weight_decay=0.01, momentum=0.9, nesterov=True)
-        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=20)
+        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=4)
     
     def print_model_params(self):
         total_params = sum(p.numel() for p in self.model.parameters())
@@ -164,8 +164,8 @@ def get_data_loaders(batch_size=32, image_size=256, num_workers=4, debug=False, 
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
-    training_set = CountriesDataset(train=True, transform=train_transform, debug=debug, preload=preload, cache_size=cache_size, max_class_file_count=600)
-    validation_set = CountriesDataset(train=False, transform=val_transform, debug=debug, preload=preload, cache_size=0)
+    training_set = CountriesDataset(train=True, transform=train_transform, debug=debug, preload=preload, cache_size=cache_size, max_class_file_count=700)
+    validation_set = CountriesDataset(train=False, transform=val_transform, debug=debug, preload=preload, cache_size=5000)
 
     training_loader = DataLoader(training_set, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
     validation_loader = DataLoader(validation_set, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
@@ -277,8 +277,8 @@ def main():
     try:
         batch_size = 16
         image_size = 256
-        epochs = 0
-        cache_size = 20000
+        epochs = 4
+        cache_size = 30000
         debug = True
 
         mp.set_start_method('spawn', force=True)
