@@ -38,7 +38,7 @@ class ImageClassifier:
         
         self.criterion = nn.CrossEntropyLoss().to(self.device)
         self.optimizer = optim.SGD(filter(lambda p: p.requires_grad, self.model.parameters()), lr=0.002, weight_decay=0.01, momentum=0.9, nesterov=True)
-        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=4)
+        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=3)
     
     def print_model_params(self):
         total_params = sum(p.numel() for p in self.model.parameters())
@@ -277,7 +277,7 @@ def main():
     try:
         batch_size = 16
         image_size = 256
-        epochs = 4
+        epochs = 3
         cache_size = 30000
         debug = True
 
