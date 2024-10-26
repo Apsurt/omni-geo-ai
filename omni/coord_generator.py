@@ -64,7 +64,11 @@ class CoordinateGenerator:
         :rtype: Generator[list[Point], None, None]
         """
         max_points = 100
-        multipolygon_p = self.positive_dict[country]
+        try:
+            multipolygon_p = self.positive_dict[country]
+        except KeyError as e:
+            print(self.positive_dict.keys())
+            raise e
 
         areas = [poly.area for poly in multipolygon_p.geoms]
         weights = [float(i)/sum(areas) for i in areas]

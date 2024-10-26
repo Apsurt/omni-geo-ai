@@ -39,7 +39,7 @@ class ImageClassifier:
         #changing this leads to bugs and pain...
         self.model = ViT('B_16',
                          image_size=image_size,
-                         pretrained=True,
+                         pretrained=False,
                          num_classes=num_classes)
         
         #blocks some parameters as model is pretrained
@@ -237,6 +237,7 @@ def get_data_loaders(batch_size=32, image_size=256, num_workers=4, debug=False, 
     ])
 
     #creates datasets defined in geography_lesson/gatasets.py
+    preload = False
     training_set = CountriesDataset(train=True, transform=train_transform, debug=debug, preload=preload, cache_size=cache_size, max_class_file_count=700)
     validation_set = CountriesDataset(train=False, transform=val_transform, debug=debug, preload=preload, cache_size=5000)
 

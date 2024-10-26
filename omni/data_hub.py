@@ -1,185 +1,45 @@
-"""Module for automated data collection."""
+"""to do."""
 
 from __future__ import annotations
 
 import os
 from typing import TYPE_CHECKING
 
-import numpy as np
+import googlemaps
 from coord_generator import CoordinateGenerator
-from google_api_handler import Handle
-from image_preprocessing import process_image
+from dotenv import load_dotenv
+from shapely.geometry import Point
 
 if TYPE_CHECKING:
-    from PIL import Image
-    from shapely.geometry import Point
-from resources import Coordinate
+    import shapely
 
+load_dotenv()
 
-class DataHub:
-    """Automated data collection class."""
+def get_hemisphere(point: shapely.geometry.point.Point) -> bool:
+    """Check on which hemisphere the point is.
 
-    def __init__(self: DataHub) -> None:
-        """DataHub constructor."""
-        self.google_api = Handle()
-        generator = CoordinateGenerator()
+    :param point: Point to check
+    :type point: shapely.geometry.point.Point
+    :return: True for northern, False for southern.
+    :rtype: bool
+    """
+    return point.x > 0
 
-        self.generator_dict = {}
-        for country in generator.country_list:
-            self.generator_dict[country] = generator.get_random_coord_generator(country)
+def get_elevation(points: list[shapely.geometry.point.Point]) -> list[float]:
+    if len(points) > 512:
+        msg = f"This endpoint can take maximum of 512 coordinates.{len(points)} is too much."
+        raise ValueError(msg)
+    client = googlemaps.Client(key=os.getenv("GOOGLE_KEY"), timeout=5)
+    points = points.copy()
+    for i in range(len(points)):
+        points[i] = (points[i].x, points[i].y)
+    response = client.elevation(points)
+    return [data["elevation"] for data in response]
 
-    def save_img(self: DataHub, path: str, country: str, img: Image) -> None:
-        """Save image in declared path.
+cg = CoordinateGenerator()
+generator = cg.get_random_coord_generator("poland")
 
-        :param self: self
-        :type self: DataHub
-        :param path: place where country folder can be found
-        :type path: str
-        :param country: country name
-        :type country: str
-        :param img: image to save
-        :type img: Image
-        """
-        country = country.lower().replace(" ", "_")
-        country_dir = os.path.join(path,country)
-        if not os.path.exists(country_dir):
-            os.mkdir(country_dir)
-        files = [f for f in os.listdir(country_dir) if os.path.isfile(os.path.join(country_dir, f))]
-        n_files = len(files)
-        number = n_files // 2
-        half = "left" if n_files % 2 == 0 else "right"
-        filename = f"{number}_{half}.png"
-        img.save(country_dir+"/"+filename)
-
-    def point_to_coord(self: DataHub, point: Point) -> Coordinate:
-        """Convert shapely Point to Coordinate.
-
-        :param self: self
-        :type self: DataHub
-        :param point: shapely point
-        :type point: Point
-        :return: converted coordinate
-        :rtype: Coordinate
-        """
-        return Coordinate(point.x, point.y)
-
-    def to_batches(self: DataHub, v: list, batch_size: int = 100) -> list[list]:
-        """Split list into lists of max len of batch_size.
-
-        :param self: self
-        :type self: DataHub
-        :param v: list to split
-        :type v: list
-        :param batch_size: max length of lists in return, defaults to 100
-        :type batch_size: int, optional
-        :return: list of splitted lists
-        :rtype: list[list]
-        """
-        return [v[x:x+batch_size] for x in range(0, len(v), batch_size)]
-
-    def get_stats(self: DataHub, path: str) -> dict:
-        """Get dictionary of file count in specified path.
-
-        :param self: self
-        :type self: DataHub
-        :param path: path to get stats from
-        :type path: str
-        :return: dict with dir name and file count
-        :rtype: dict
-        """
-        dirs = os.listdir(path)
-        stats_dict = {}
-        for _dir in dirs:
-            files = os.listdir(os.path.join(path, _dir))
-            stats_dict[_dir] = len(files)
-        return stats_dict
-
-    def get_total_data_amount(self: DataHub, path: str) -> int:
-        """Sum stats dictionary.
-
-        :param self: self
-        :type self: DataHub
-        :param path: path to get stats from
-        :type path: str
-        :return: sum of files
-        :rtype: int
-        """
-        return sum(self.get_stats(path).values())
-
-    def get_data_standard_deviation(self: DataHub, path: str) -> float:
-        """Calculate standard deviation of file counts.
-
-        :param self: self
-        :type self: DataHub
-        :param path: path to get stats from
-        :type path: str
-        :return: standard deviation
-        :rtype: float
-        """
-        return np.std(list(self.get_stats(path).values()))
-
-    def get_data(
-        self: DataHub,
-        max_files: int,
-        path: str,
-        skip: list[str] | None = None,
-        ) -> None:
-        """Mainloop function.
-
-        Collects data till each country has specified amount of files.
-
-        :param self: self
-        :type self: DataHub
-        :param max_files: how much files each country can have
-        :type max_files: int
-        :param path: path to directory
-        :type path: str
-        :param skip: skip certain countries, defaults to None
-        :type skip: list[str] | None, optional
-        """
-        print(f"Saving files till each country has {max_files}")
-        if not skip:
-            skip = []
-        total = 0
-        total_saved = 0
-        stats = self.get_stats(path)
-        for country, generator in self.generator_dict.items():
-            if country in skip:
-                continue
-            saved = 0
-            try:
-                current_files = stats[country]
-            except KeyError:
-                current_files = 0
-            batch_idx = 1
-            while current_files < max_files:
-                print(f"BATCH {batch_idx} for {country}, currently has {current_files} images")
-                points = next(generator)
-                total += 100
-                coords = list(map(self.point_to_coord, points))
-                try:
-                    images = self.google_api.get_full_panos(coords)
-                except KeyboardInterrupt as e:
-                    raise e
-                except:
-                    continue
-                for country_google, img in images:
-
-                    if img:
-                        img_left, img_right = process_image(img)
-                        self.save_img(path, country_google, img_left)
-                        self.save_img(path, country_google, img_right)
-                        saved += 2
-                        stats = self.get_stats(path)
-                        current_files = stats[country]
-                batch_idx += 1
-            total_saved += saved
-            print(f"{country} is done, has {current_files} images")
-        print(f"Saved {total_saved} images")
-
-if __name__ == "__main__":
-    dh = DataHub()
-    path = "data/countries/train"
-    dh.get_data(750, path)
-    print(dh.get_total_data_amount(path))
-    print(dh.get_data_standard_deviation(path))
+points = next(generator)
+print(points)
+print(get_hemisphere(points[0]))
+print(get_elevation(points))

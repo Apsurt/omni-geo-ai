@@ -62,7 +62,7 @@ class Coordinator:
     def _tuple_to_point(self: Coordinator, coord: tuple) -> Point:
         return Point(coord[0], coord[1])
 
-    def get_multipolygon_dicts(self: Coordinator) -> MultiPolygon:
+    def get_multipolygon_dicts(self: Coordinator) -> tuple(dict(MultiPolygon), dict(MultiPolygon)):
         """Convert Polygons to MultiPolygons and returns dictionary."""
         positive_dict, negative_dict = self.get_polygon_dicts()
         for name, polygons in positive_dict.items():
