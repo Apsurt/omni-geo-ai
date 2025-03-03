@@ -56,7 +56,46 @@ def parse_args():
         help="Initialize database and validate settings without collecting images"
     )
     
+    parser.add_argument(
+        "--clear",
+        action="store_true",
+        help="Clear all panorama data from database and GCS storage before collecting"
+    )
+    
+    parser.add_argument(
+        "--clear_only",
+        action="store_true",
+        help="Clear all panorama data from database and GCS storage and exit without collecting"
+    )
+    
     return parser.parse_args()
+
+
+def clear_data():
+    """Clear all panorama data from database and GCS storage."""
+    from omni_geo_ai.database import clear_db
+    from omni_geo_ai.storage import StorageClient
+    
+    print("Clearing all panorama data...")
+    
+    # Clear database
+    try:
+        clear_db()
+        print("✅ Database cleared successfully")
+    except Exception as e:
+        print(f"❌ Error clearing database: {e}")
+        return False
+    
+    # Clear GCS storage
+    try:
+        storage_client = StorageClient()
+        deleted_count = storage_client.clear_all_panoramas()
+        print(f"✅ Google Cloud Storage cleared successfully ({deleted_count} files deleted)")
+    except Exception as e:
+        print(f"❌ Error clearing Google Cloud Storage: {e}")
+        return False
+    
+    return True
 
 
 def main():
@@ -72,6 +111,20 @@ def main():
     
     # Initialize database (create tables if they don't exist)
     init_db()
+    
+    # Handle clear_only flag (clear and exit)
+    if args.clear_only:
+        if clear_data():
+            print("All data cleared successfully. Exiting.")
+        else:
+            print("Error clearing data. Some operations may have failed.")
+        return
+    
+    # Handle clear flag (clear before continuing)
+    if args.clear:
+        if not clear_data():
+            print("Error clearing data. Aborting collection.")
+            return
     
     if args.dry_run:
         print("Dry run mode: Database initialized successfully")

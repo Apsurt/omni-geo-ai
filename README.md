@@ -58,6 +58,15 @@ python scripts/fetch_panoramas.py --num_images 50 --output_stats stats.json
 
 # Enable verbose logging
 python scripts/fetch_panoramas.py --num_images 20 --verbose
+
+# Clear existing data before collecting new images
+python scripts/fetch_panoramas.py --num_images 50 --clear
+
+# Only clear data without collecting new images
+python scripts/fetch_panoramas.py --clear_only
+
+# Update the StreetViewClient with ~1000 cities
+python scripts/update_streetview_cities.py
 ```
 
 #### Database Backup

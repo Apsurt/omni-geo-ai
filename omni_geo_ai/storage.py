@@ -113,3 +113,35 @@ class StorageClient:
         
         blob.delete()
         return True
+        
+    def clear_all_panoramas(self) -> int:
+        """Delete all panorama images from Google Cloud Storage.
+        
+        Returns:
+            Number of deleted images
+        """
+        if GCS_DRY_RUN:
+            print(f"DRY RUN: Would delete all panoramas from gs://{self.bucket_name}")
+            return 0
+            
+        deleted_count = 0
+        
+        # First delete north hemisphere images
+        north_blobs = self.client.list_blobs(
+            self.bucket_name, 
+            prefix=NORTH_HEMISPHERE_PATH
+        )
+        for blob in north_blobs:
+            blob.delete()
+            deleted_count += 1
+            
+        # Then delete south hemisphere images
+        south_blobs = self.client.list_blobs(
+            self.bucket_name, 
+            prefix=SOUTH_HEMISPHERE_PATH
+        )
+        for blob in south_blobs:
+            blob.delete()
+            deleted_count += 1
+            
+        return deleted_count

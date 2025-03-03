@@ -46,3 +46,17 @@ def init_db():
 def close_db(db):
     """Close the database session."""
     db.close()
+
+
+def clear_db():
+    """Clear all data from the database tables without dropping the tables."""
+    db = get_db_session()
+    try:
+        db.query(Panorama).delete()
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        close_db(db)
