@@ -12,7 +12,10 @@ This project focuses on building a pipeline to collect Google Street View panora
 ### Prerequisites
 - Python 3.10+
 - PostgreSQL
-- Google Cloud account (for Street View API)
+- Google Cloud account with:
+  - Street View Static API enabled
+  - Geocoding API enabled
+  - Google Cloud Storage
 
 ### Installation
 1. Clone the repository:
@@ -29,12 +32,47 @@ This project focuses on building a pipeline to collect Google Street View panora
    cp .env.example .env
    # Add your Google API key and PostgreSQL credentials to .env
    ```
+4. Initialize the database:
+   ```bash
+   # Create PostgreSQL database
+   createdb omni_geo_ai
+   
+   # Run the data collection script to initialize tables
+   python scripts/fetch_panoramas.py --num_images 5 --dry_run
+   ```
 
 ### Usage
 #### Data Collection
-Run the daily panorama scraper:
+Run the panorama scraper to collect a specific number of images:
 ```bash
 python scripts/fetch_panoramas.py --num_images 1000
+```
+
+Advanced options:
+```bash
+# Control the ratio of Northern/Southern hemisphere images
+python scripts/fetch_panoramas.py --num_images 100 --north_ratio 0.7
+
+# Save collection statistics to a JSON file
+python scripts/fetch_panoramas.py --num_images 50 --output_stats stats.json
+
+# Enable verbose logging
+python scripts/fetch_panoramas.py --num_images 20 --verbose
+```
+
+#### Database Backup
+Backup the PostgreSQL database to Google Cloud Storage:
+```bash
+python scripts/backup_db.py
+```
+
+Backup options:
+```bash
+# Specify a different GCS bucket
+python scripts/backup_db.py --bucket my-backup-bucket
+
+# Custom backup directory path in GCS
+python scripts/backup_db.py --backup_dir database/daily
 ```
 
 #### Train Hemisphere Model
