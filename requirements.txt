@@ -7,7 +7,7 @@ psycopg2-binary==2.9.6
 sqlalchemy==2.0.15
 
 # Cloud Storage
-google-cloud-storage==2.9.0
+google-cloud-storage==3.1.0
 
 # Environment and Config
 python-dotenv==1.0.0
