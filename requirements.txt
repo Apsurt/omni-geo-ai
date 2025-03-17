@@ -13,7 +13,7 @@ google-cloud-storage==2.9.0
 python-dotenv==1.0.0
 
 # Data Processing
-numpy==1.24.3
+numpy==2.2.4
 pillow==9.5.0
 
 # ML (for future use)
